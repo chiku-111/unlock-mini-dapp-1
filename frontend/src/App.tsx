@@ -7,6 +7,7 @@ import {
   custom,
   http, 
   parseEther,   //ETH 转成 wei
+  formatEther,  //把链上 wei 转成人类可读 ETH 字符串
   type Address 
 } from 'viem';
 import { hardhat } from "viem/chains";
@@ -53,6 +54,8 @@ declare global {
 
 function App() {
 const [accessState, setAccessState] = useState<AccessState>("locked");
+//保存从合约 price() 读取到的会员价格, 初始值为空字符串表示还没有加载
+const [membershipPrice, setMembershipPrice] = useState<string>("");
 const [walletAddress, setWalletAddress]= useState<Address | null>(null);
 //保存连接钱包时的错误信息。初始为null
 const [walletError, setWalletError]= useState<string | null>(null);
@@ -79,6 +82,33 @@ async function handleConnectWallet(){
   setWalletAddress(accounts[0]  as Address);} catch {
     setWalletError("Failed to connect wallet");
   }
+}
+
+//前端从链上 MembershipLock 合约读取会员价格 price, 并显示在页面上。
+async function handleLoadPrice() {
+  setMembershipError(null);
+
+  //尝试执行读取链上数据的代码, 如果失败就进入 catch
+  
+  try{
+    // @ts-ignore viem type inference is stricter than this local demo needs.
+    const price = await publicClient.readContract({
+      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "price",
+    });
+
+    console.log("Raw price in wei:", price);
+    console.log("Formatted price in ETH:", formatEther(price));
+
+    //把 price 从 wei 转成 ETH 字符串, 并保存到 React 状态
+    setMembershipPrice(formatEther(price));
+
+  }catch(error){
+    console.error("Failed to read membership price:", error);
+    setMembershipError("Failed to read membership price");
+  }
+  
 }
 
 async function handleCheckMembership() {
@@ -166,10 +196,15 @@ async function handleCheckMembership() {
       {membershipError !== null && <p>{membershipError}</p>}
 
       <p>Current status: {accessState}</p>
+      
+      {/*`${membershipPrice} ETH`= JavaScript模板字符串*/}
+      <p>Membership price: {membershipPrice === "" ? "not loaded" : `${membershipPrice} ETH`}</p>
 
-      <button type="button" 
-      onClick={handleCheckMembership}
+      <button type="button" onClick = {handleLoadPrice}>
+        Load Price
+      </button>
 
+      <button type="button" onClick={handleCheckMembership}
       //if isCheckMembership is true, 按钮禁用
       disabled={isCheckMembership}
       >
