@@ -62,6 +62,8 @@ const [walletError, setWalletError]= useState<string | null>(null);
 const [membershipError, setMembershipError] = useState<string | null>(null);
 //当前是否正在检查会员状态:isCheckMembership
 const [isCheckMembership, setIsCheckingMembership] = useState(false);
+//保存会员到期时间的显示文字
+const [membershipExpiresAtText, setMembershipExpiresAtText] = useState<string>("");
 
 
 async function handleConnectWallet(){
@@ -136,6 +138,26 @@ async function handleCheckMembership() {
       });
 
       setAccessState(isMember ? "unlocked" : "locked");
+
+      // @ts-ignore viem type inference is stricter than this local demo needs.
+      const expiresAt = await publicClient.readContract({
+        address: MEMBERSHIP_LOCK_ADDRESS as Address,
+        abi: MEMBERSHIP_LOCK_ABI,
+        functionName: "membershipExpiresAt",
+        args: [walletAddress as Address],
+      });
+
+      if(expiresAt === 0n){
+        setMembershipExpiresAtText("not set"); //显示: 没有设置
+        
+      }else{
+        //把链上的秒级时间戳转换成JS可理解的日期对象,毫秒
+        const expiresAtDate = new Date(Number(expiresAt) * 1000);
+
+        //.toLocaleString 把日期对象转换成本地格式的字符串
+        setMembershipExpiresAtText(expiresAtDate.toLocaleString());
+      }
+
     }catch {
       setMembershipError("Fail to read Membership from contract");
 
@@ -199,6 +221,11 @@ async function handleCheckMembership() {
       
       {/*`${membershipPrice} ETH`= JavaScript模板字符串*/}
       <p>Membership price: {membershipPrice === "" ? "not loaded" : `${membershipPrice} ETH`}</p>
+
+      {/* 显示当前钱包的会员到期时间 */}
+      <p>Membership expires at:{" "}
+        {membershipExpiresAtText === "" ? "not loaded" : membershipExpiresAtText}
+      </p>
 
       <button type="button" onClick = {handleLoadPrice}>
         Load Price

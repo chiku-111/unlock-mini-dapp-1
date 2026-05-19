@@ -38,5 +38,16 @@ export const MEMBERSHIP_LOCK_ABI = [
         stateMutability: "payable",  //表示这个函数会改状态, 并且可收 ETH
         inputs: [],
         outputs:[],
+    },
+
+    {
+        inputs: [{ internalType: "address", name: "", type: "address"}],
+        name: "membershipExpiresAt",
+        outputs: [{ internalType: "uint256", name: "", type: "uint256"}],
+        stateMutability: "view",
+        type: "function",
+        
     }
+
+
 ] as const;
