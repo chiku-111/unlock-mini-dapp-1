@@ -6,7 +6,7 @@ import {
   createWalletClient,
   custom,
   http, 
-  parseEther,   //ETH 转成 wei
+ // parseEther,   //ETH 转成 wei
   formatEther,  //把链上 wei 转成人类可读 ETH 字符串
   type Address 
 } from 'viem';
@@ -22,6 +22,9 @@ import './App.css'
 
 
 type AccessState = "locked" | "unlocked";
+
+//idle: 空闲还没开始购买 or 等钱包确认 or 交易已发送,正等链上确认 
+type PurchaseStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
 
 // EthereumProvider = MetaMask 注入的 ethereum 对象起的类型名字
 type EthereumProvider = {
@@ -64,6 +67,13 @@ const [membershipError, setMembershipError] = useState<string | null>(null);
 const [isCheckMembership, setIsCheckingMembership] = useState(false);
 //保存会员到期时间的显示文字
 const [membershipExpiresAtText, setMembershipExpiresAtText] = useState<string>("");
+//会员价格的链上原始值
+const[membershipPriceRaw,  setMembershipPriceRaw] = useState<bigint | null>(null);
+//创建购买状态,默认是 idle
+const[purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>("idle");
+//保存购买交易的 hash ,开始未交易, 空字符串。
+const[purchaseTxHash, setPurchaseTxHash] = useState<string>("");
+
 
 
 async function handleConnectWallet(){
@@ -105,6 +115,8 @@ async function handleLoadPrice() {
 
     //把 price 从 wei 转成 ETH 字符串, 并保存到 React 状态
     setMembershipPrice(formatEther(price));
+
+    setMembershipPriceRaw(price);
 
   }catch(error){
     console.error("Failed to read membership price:", error);
@@ -178,12 +190,24 @@ async function handleCheckMembership() {
         setMembershipError("Please connect wallet first");
         return;
       }
+
+      if(membershipPriceRaw == null){
+        setMembershipError("Please load membership price first");
+        return;
+      }
       try{
+        //购买流程开始了, 现正等待用户在 MetaMask 里确认
+        setPurchaseStatus("waitingWallet");
+        //清空上一次交易hash
+        setPurchaseTxHash("");
+
         //用来创建一个钱包客户端
         const walletClient = createWalletClient({
           chain: hardhat,
           transport: custom(window.ethereum),
         });
+
+        //writeContract: 发送一笔写合约交易
         const hash = await walletClient.writeContract({
           address: MEMBERSHIP_LOCK_ADDRESS as Address,
           abi: MEMBERSHIP_LOCK_ABI,
@@ -191,13 +215,23 @@ async function handleCheckMembership() {
           account: walletAddress,
           chain: hardhat,
 
-          //调用 purchaseMembership 时，附带 0.01 ETH
-          value: parseEther("0.01"),
+          value:membershipPriceRaw,
+
         });
+
+        setPurchaseTxHash(hash);
+        setPurchaseStatus("pending");
+
         //waitForTransactionReceipt: 等待交易收据
-        await publicClient.waitForTransactionReceipt({hash});
+        await publicClient.waitForTransactionReceipt({hash: hash});
+
+        setPurchaseStatus("confirmed");
+
         await handleCheckMembership();
       } catch (error) {
+        console.error("Failed to purchase membership:", error);
+        
+        setPurchaseStatus("failed");
         setMembershipError("Failed to purchase membership");
       }
     }
@@ -227,6 +261,13 @@ async function handleCheckMembership() {
         {membershipExpiresAtText === "" ? "not loaded" : membershipExpiresAtText}
       </p>
 
+      <p>Purchase status: {purchaseStatus}</p>
+      
+      {/*如果 purchaseTxHash 不是空字符串, 才显示交易 hash*/}
+      {purchaseTxHash !== "" &&(
+        <p>Transaction hash: {purchaseTxHash}</p>
+      )}
+
       <button type="button" onClick = {handleLoadPrice}>
         Load Price
       </button>
@@ -246,8 +287,14 @@ async function handleCheckMembership() {
         Connect Wallet
       </button>
 
-      <button type='button' onClick={handlePurchaseMembership}>
-        Purchase Membership
+      {/*disabled: 按钮是否禁用, return is true or false*/ }
+      <button type='button' 
+      onClick={handlePurchaseMembership}
+      disabled = {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"}>
+        {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"
+        ? "Purchasing..."
+        : "Purchase Membership"}
+        
       </button>
     </main>
   )
