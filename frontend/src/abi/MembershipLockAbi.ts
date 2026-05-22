@@ -47,6 +47,14 @@ export const MEMBERSHIP_LOCK_ABI = [
         stateMutability: "view",
         type: "function",
         
+    },
+
+    {
+        type: "function",
+        name: "owner",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ name: "", type: "address"}],
     }
 
 

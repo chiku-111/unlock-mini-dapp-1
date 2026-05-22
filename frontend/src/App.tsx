@@ -73,6 +73,8 @@ const[membershipPriceRaw,  setMembershipPriceRaw] = useState<bigint | null>(null
 const[purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>("idle");
 //保存购买交易的 hash ,开始未交易, 空字符串。
 const[purchaseTxHash, setPurchaseTxHash] = useState<string>("");
+//
+const [contractOwnerAddress, setContractOwnerAddress] = useState<Address | null>(null);
 
 
 
@@ -94,6 +96,26 @@ async function handleConnectWallet(){
   setWalletAddress(accounts[0]  as Address);} catch {
     setWalletError("Failed to connect wallet");
   }
+}
+
+//去链上读取 owner(), 然后把结果放进 contractOwnerAddress, 管理员地址
+async function handleLoadOwner () {
+  setMembershipError(null);
+
+  try{
+    // @ts-ignore viem type inference is stricter than this local demo needs.
+    const owner = await publicClient.readContract({
+      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "owner",
+    });
+
+    //刚才读到的 owner 地址放进 React state
+    setContractOwnerAddress(owner as Address);
+  }catch(error){
+    console.error("Failed to read contract owner:", error);
+  }
+  
 }
 
 //前端从链上 MembershipLock 合约读取会员价格 price, 并显示在页面上。
@@ -245,6 +267,9 @@ async function handleCheckMembership() {
       {/*If left is null - not connected, else left*/}
       <p>Wallet: {walletAddress ?? "not connected"}</p> 
 
+      {/* contractOwnerAddress 管理员地址 */}
+      <p>Contract owner: {contractOwnerAddress ?? "not loaded"}</p>
+
     {/*react 中 && 可以条件显示 true就显示右边, false不显示*/}
     {/* 如果 walletError 不是 null, 就显示错误信息 */}
       
@@ -268,12 +293,17 @@ async function handleCheckMembership() {
         <p>Transaction hash: {purchaseTxHash}</p>
       )}
 
+      {/* 按钮传函数名，不直接调用 */}
+      <button type='button' onClick={handleLoadOwner}>
+        Load Owner
+      </button>
+
       <button type="button" onClick = {handleLoadPrice}>
         Load Price
       </button>
 
+      {/*if isCheckMembership is true, 按钮禁用*/}
       <button type="button" onClick={handleCheckMembership}
-      //if isCheckMembership is true, 按钮禁用
       disabled={isCheckMembership}
       >
         {isCheckMembership ? "Check..." : "Check Membership"}
