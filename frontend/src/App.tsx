@@ -258,6 +258,11 @@ async function handleCheckMembership() {
       }
     }
 
+  //当前钱包是否为owner, .toLowerCase表示地址变小写
+  const isCurrentWalletOwner = walletAddress !== null &&
+    contractOwnerAddress !== null &&
+    walletAddress.toLowerCase() === contractOwnerAddress.toLocaleLowerCase();
+
 
 //JSX
   return (
@@ -269,6 +274,15 @@ async function handleCheckMembership() {
 
       {/* contractOwnerAddress 管理员地址 */}
       <p>Contract owner: {contractOwnerAddress ?? "not loaded"}</p>
+
+      <p>
+        Current wallet is owner:{""}
+        {walletAddress === null || contractOwnerAddress === null
+        ? "not checked"
+        : isCurrentWalletOwner
+          ? "yes"
+          : "no"}
+      </p>
 
     {/*react 中 && 可以条件显示 true就显示右边, false不显示*/}
     {/* 如果 walletError 不是 null, 就显示错误信息 */}
