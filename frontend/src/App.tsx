@@ -18,9 +18,6 @@ import { MEMBERSHIP_LOCK_ABI } from "./abi/MembershipLockAbi";
 // 这个地址告诉前端：合约部署在哪里
 import { MEMBERSHIP_LOCK_ADDRESS } from "./config";
 
-import './App.css'
-
-
 type AccessState = "locked" | "unlocked";
 
 //idle: 空闲还没开始购买 or 等钱包确认 or 交易已发送,正等链上确认 
@@ -75,7 +72,8 @@ const[purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>("idle");
 const[purchaseTxHash, setPurchaseTxHash] = useState<string>("");
 //
 const [contractOwnerAddress, setContractOwnerAddress] = useState<Address | null>(null);
-
+//合约余额
+const [contractBalance, setContractBalance] = useState<string>("");
 
 
 async function handleConnectWallet(){
@@ -116,6 +114,23 @@ async function handleLoadOwner () {
     console.error("Failed to read contract owner:", error);
   }
   
+}
+
+//处理读取合约余额这件事
+async function handleLoadContractBalance() {
+  setMembershipError(null);
+
+  try{
+    const balance = await publicClient.getBalance({
+      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+    });
+
+    setContractBalance(formatEther(balance));
+  }catch(error){
+    console.error("Failed to read contract balance");
+
+    setMembershipError("Failed to read contract error");
+  }
 }
 
 //前端从链上 MembershipLock 合约读取会员价格 price, 并显示在页面上。
@@ -284,6 +299,11 @@ async function handleCheckMembership() {
           : "no"}
       </p>
 
+      <p>
+        Contract balance:{""}
+        {contractBalance === "" ? "not loaded" : `${contractBalance} ETH`}
+      </p>
+
     {/*react 中 && 可以条件显示 true就显示右边, false不显示*/}
     {/* 如果 walletError 不是 null, 就显示错误信息 */}
       
@@ -310,6 +330,10 @@ async function handleCheckMembership() {
       {/* 按钮传函数名，不直接调用 */}
       <button type='button' onClick={handleLoadOwner}>
         Load Owner
+      </button>
+
+      <button type='button' onClick={handleLoadContractBalance}>
+        Load Contract Balance  
       </button>
 
       <button type="button" onClick = {handleLoadPrice}>
