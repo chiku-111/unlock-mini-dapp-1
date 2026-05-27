@@ -140,24 +140,6 @@ describe("MembershipLock", function(){
         expect(await membershipLock.hasValidMembership(user.address)).to.equal(true);
     });
 
-    //用户购买得到的 30 天会员, 购买的会员过期后，应该返回 false
-    it("should return false after user purchases membership expires", async function () {
-        const membershipLock = await ethers.deployContract("MembershipLock");
-
-        const [, user] = await ethers.getSigners();
-
-        await membershipLock.connect(user).purchaseMembership({
-            //购买会员时随交易发送 0.01 ETH
-            value: ethers.parseEther("0.01"),
-        });
-        expect(await membershipLock.hasValidMembership(user.address)).to.equal(true);
-
-        //让测试链时间快进 30days + 1s
-        await networkHelpers.time.increase(30 * 24 * 60 * 60 + 1);
-
-        expect(await membershipLock.hasValidMembership(user.address)).to.equal(false);
-    });
-    
     //购买成功后, 合约应该收到钱, 并且用户应该成为有效会员
     it("contract should receive payment after purchase and user should become valid member", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");
@@ -176,6 +158,86 @@ describe("MembershipLock", function(){
         expect(contractBalance).to.equal(ethers.parseEther("0.01"));
         expect(await membershipLock.hasValidMembership(user.address)).to.equal(true);
     });
+
+    //有效会员可以从当前到期时间继续续费
+    it("active member can renew from current expiration time", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [, user] = await ethers.getSigners();
+
+        const price = ethers.parseEther("0.01");
+
+        const membershipDuration = 30n * 24n * 60n * 60n;
+
+        await membershipLock.connect(user).purchaseMembership({
+            value: price,
+        });
+
+        const firstExpiresAt = await membershipLock.membershipExpiresAt(user.address);
+
+        //让测试链时间前进 10 天, 模拟用户会员还没过期时提前续费
+        await networkHelpers.time.increase(10 * 24 * 60 * 60);
+
+        await membershipLock.connect(user).purchaseMembership({
+            value: price,
+        });
+        //secondExpiresAt 是续费后的新到期时间
+        const secondExpiresAt = await membershipLock.membershipExpiresAt(user.address);
+
+        //断言: 续费后的到期时间, 应该等于第一次到期时间 + 30 天
+        expect(secondExpiresAt).to.equal(firstExpiresAt + membershipDuration);
+        
+    });
+
+
+    //用户购买得到的 30 天会员, 购买的会员过期后，应该返回 false
+    it("should return false after user purchases membership expires", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+
+        const [, user] = await ethers.getSigners();
+
+        await membershipLock.connect(user).purchaseMembership({
+            //购买会员时随交易发送 0.01 ETH
+            value: ethers.parseEther("0.01"),
+        });
+        expect(await membershipLock.hasValidMembership(user.address)).to.equal(true);
+
+        //让测试链时间快进 30days + 1s
+        await networkHelpers.time.increase(30 * 24 * 60 * 60 + 1);
+
+        expect(await membershipLock.hasValidMembership(user.address)).to.equal(false);
+    });
+
+     //过期会员再次购买, 从当前时间重新加 30 天
+    it("expired member can purchase from current time", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const[, user] = await ethers.getSigners();
+
+        const price = ethers.parseEther("0.01");
+        const membershipDuration = 30n * 24n *60n *60n;
+
+        await membershipLock.connect(user).purchaseMembership({
+            value: price,
+        });
+
+        //测试链时间加1s 确保会员过期
+        await networkHelpers.time.increase(30 * 24 * 60 * 60 + 1);
+
+        const tx = await membershipLock.connect(user).purchaseMembership({
+            value: price,
+        });
+
+        const receipt = await tx.wait();
+
+        //根据区块号读取区块信息
+        const block = await ethers.provider.getBlock(receipt!.blockNumber);
+
+        const secondExpiresAt = await membershipLock.membershipExpiresAt(user.address);
+
+        expect(secondExpiresAt).to.equal(BigInt(block!.timestamp) + membershipDuration);
+        
+    });
+    
+
 
     //owner 可以把合约里的全部 ETH 提现到指定地址, recipient 表示接收ETH的人
     it("owner can withdraw all ETH from contract to recipient", async function () {
@@ -272,9 +334,7 @@ describe("MembershipLock", function(){
             })
         ).to.emit(membershipLock, "MembershipPurchased")
         .withArgs(user.address, price, anyValue);
-    })
-
-
+    });
 
 
 })

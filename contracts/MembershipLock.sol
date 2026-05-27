@@ -51,7 +51,15 @@ contract MembershipLock{
         //检查用户这次付款金额是不是刚好等于会员价格
         require(msg.value == price, "Incorrect payment");
         
-        uint256 expiresAt = block.timestamp + 30 days;
+        uint256 currentExpiresAt = membershipExpiresAt[msg.sender];
+
+        //如果会员还有效,startTime = 当前到期时间,or startTime = 当前区块时间
+        uint256 startTime = currentExpiresAt > block.timestamp
+            ? currentExpiresAt
+            : block.timestamp;
+
+        uint256 expiresAt = startTime + 30 days;
+
         membershipExpiresAt[msg.sender] = expiresAt;
 
         emit MembershipPurchased(msg.sender, msg.value, expiresAt);
