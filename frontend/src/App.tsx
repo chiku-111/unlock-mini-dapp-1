@@ -23,12 +23,17 @@ type AccessState = "locked" | "unlocked";
 //idle: 空闲还没开始购买 or 等钱包确认 or 交易已发送,正等链上确认 
 type PurchaseStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
 
+//提现状态类型
+type WithdrawStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
+
 // EthereumProvider = MetaMask 注入的 ethereum 对象起的类型名字
 type EthereumProvider = {
   //eth_requestAccounts : 请求用户授权当前网站访问钱包账户
   //
   request: (args: {method: string; params?: unknown[]}) => Promise<unknown>;
 };
+
+
 
 //扩展全局 Window 类型。告诉ts : window 上可能存在 ethereum
 declare global {
@@ -74,6 +79,12 @@ const[purchaseTxHash, setPurchaseTxHash] = useState<string>("");
 const [contractOwnerAddress, setContractOwnerAddress] = useState<Address | null>(null);
 //合约余额
 const [contractBalance, setContractBalance] = useState<string>("");
+
+const [withdrawStatus, setWithdrawStatus] = useState<WithdrawStatus>("idle");
+
+//保存提现交易 hash; 开始无交易, 空字符串
+const [withdrawTxHash, setWithdrawTxHash] = useState<string>("");
+
 
 
 async function handleConnectWallet(){
@@ -127,9 +138,9 @@ async function handleLoadContractBalance() {
 
     setContractBalance(formatEther(balance));
   }catch(error){
-    console.error("Failed to read contract balance");
+    console.error("Failed to read contract balance:", error);
 
-    setMembershipError("Failed to read contract error");
+    setMembershipError("Failed to read contract balance");
   }
 }
 
@@ -216,6 +227,7 @@ async function handleCheckMembership() {
       setIsCheckingMembership(false);
     }
 }
+
     async function handlePurchaseMembership() {
       setMembershipError(null);
       if(window.ethereum === undefined){
@@ -273,6 +285,68 @@ async function handleCheckMembership() {
       }
     }
 
+
+
+    async function handleWithdraw() {
+    setMembershipError(null);
+
+    if (window.ethereum === undefined){
+      setWalletError("MetaMask is not installed");
+      return;
+    }
+
+    if(walletAddress === null){
+      setMembershipError("Please connect wallet first");
+      return;
+    }
+
+    if(!isCurrentWalletOwner){
+      setMembershipError("Only owner can withdraw");
+      return;
+    }
+
+    try{
+      setWithdrawStatus("waitingWallet");
+      //清空上一次提现交易 hash
+      setWithdrawTxHash("");
+
+      const walletClient = createWalletClient({
+        chain: hardhat,
+        //用浏览器钱包提供的 provider 发送请求
+        transport: custom(window.ethereum),
+      });
+
+      const hash = await walletClient.writeContract({
+        address: MEMBERSHIP_LOCK_ADDRESS as Address,
+        abi: MEMBERSHIP_LOCK_ABI,
+        functionName: "withdraw",
+        args: [walletAddress],
+        account: walletAddress,
+        chain: hardhat,
+      });
+
+      //把提现交易 hash 保存
+      setWithdrawTxHash(hash);
+      
+      //交易已经发出，正在等待链上确认
+      setWithdrawStatus("pending");
+
+      await publicClient.waitForTransactionReceipt({ hash});
+
+      setWithdrawStatus("confirmed");
+
+      //提现成功后, 合约余额应该变化
+      await handleLoadContractBalance();
+
+    }catch(error){
+      console.error("Failed to withdraw:", error);
+
+      setWithdrawStatus("failed");
+
+      setMembershipError("Failed to withdraw")
+    }
+  }
+
   //当前钱包是否为owner, .toLowerCase表示地址变小写
   const isCurrentWalletOwner = walletAddress !== null &&
     contractOwnerAddress !== null &&
@@ -321,6 +395,28 @@ async function handleCheckMembership() {
       </p>
 
       <p>Purchase status: {purchaseStatus}</p>
+
+      <p>Withdraw status: {withdrawStatus}</p>
+      
+      //&&:只有提现交易 hash 存在时, 才显示这一段
+      {withdrawTxHash !== "" && (
+        <p>Withdraw transaction hash: {withdrawTxHash}</p>
+      )}
+
+      //如果当前钱包是 owner, 才显示里面的按钮
+      {isCurrentWalletOwner && (
+        <button
+          type='button'
+          onClick={handleWithdraw}
+          disabled={withdrawStatus === "waitingWallet" || withdrawStatus === "pending" }>
+
+        {withdrawStatus === "waitingWallet" || withdrawStatus === "pending"
+            ? "Withdrawing..."
+            : "Withdraw"}
+          </button>
+      )}  
+
+
       
       {/*如果 purchaseTxHash 不是空字符串, 才显示交易 hash*/}
       {purchaseTxHash !== "" &&(

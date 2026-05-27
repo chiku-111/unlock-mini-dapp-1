@@ -55,6 +55,21 @@ export const MEMBERSHIP_LOCK_ABI = [
         stateMutability: "view",
         inputs: [],
         outputs: [{ name: "", type: "address"}],
+    },
+
+    //nonpayable = 会改状态，但调用时不收 ETH
+    {
+        type: "function",
+        name: "withdraw",
+        stateMutability: "nonpayable",
+        inputs: [
+            {
+                name:"recipient",
+                type: "address",
+            },
+        ],
+        outputs: [],
+
     }
 
 
