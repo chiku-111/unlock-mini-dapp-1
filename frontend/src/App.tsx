@@ -15,8 +15,8 @@ import { hardhat } from "viem/chains";
 // 引入 MembershipLock 合约的 ABI
 import { MEMBERSHIP_LOCK_ABI } from "./abi/MembershipLockAbi";
 
-// 这个地址告诉前端：合约部署在哪里
-import { MEMBERSHIP_LOCK_ADDRESS } from "./config";
+// 根据 chainId 找 deployment
+import { getDeploymentByChainId } from "./deployments";
 
 type AccessState = "locked" | "unlocked";
 
@@ -52,6 +52,14 @@ declare global {
       // 指定 RPC 地址。
     transport: http("http://127.0.0.1:8545"),
   });
+
+  const currentDeployment = getDeploymentByChainId(31337);
+
+  if(currentDeployment === null){
+    throw new Error("Missing local deployment for chainId 31337");
+  }
+
+  const membershipLockAddress = currentDeployment.membershipLock as Address;
   
 
 // 创建一个页面状态 accessState: 初始值是 "locked"
@@ -114,7 +122,7 @@ async function handleLoadOwner () {
   try{
     // @ts-ignore viem type inference is stricter than this local demo needs.
     const owner = await publicClient.readContract({
-      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+      address: membershipLockAddress,
       abi: MEMBERSHIP_LOCK_ABI,
       functionName: "owner",
     });
@@ -133,7 +141,7 @@ async function handleLoadContractBalance() {
 
   try{
     const balance = await publicClient.getBalance({
-      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+      address: membershipLockAddress,
     });
 
     setContractBalance(formatEther(balance));
@@ -153,7 +161,7 @@ async function handleLoadPrice() {
   try{
     // @ts-ignore viem type inference is stricter than this local demo needs.
     const price = await publicClient.readContract({
-      address: MEMBERSHIP_LOCK_ADDRESS as Address,
+      address: membershipLockAddress,
       abi: MEMBERSHIP_LOCK_ABI,
       functionName: "price",
     });
@@ -190,7 +198,7 @@ async function handleCheckMembership() {
       // @ts-ignore viem type inference is stricter than this local demo needs.
       const isMember = await publicClient.readContract({
         //not walletAddress, is contract address: 去哪里查
-        address: MEMBERSHIP_LOCK_ADDRESS as Address,
+        address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "hasValidMembership",
         //walletAddress: 查谁
@@ -201,7 +209,7 @@ async function handleCheckMembership() {
 
       // @ts-ignore viem type inference is stricter than this local demo needs.
       const expiresAt = await publicClient.readContract({
-        address: MEMBERSHIP_LOCK_ADDRESS as Address,
+        address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "membershipExpiresAt",
         args: [walletAddress as Address],
@@ -258,7 +266,7 @@ async function handleCheckMembership() {
 
         //writeContract: 发送一笔写合约交易
         const hash = await walletClient.writeContract({
-          address: MEMBERSHIP_LOCK_ADDRESS as Address,
+          address: membershipLockAddress,
           abi: MEMBERSHIP_LOCK_ABI,
           functionName: "purchaseMembership",
           account: walletAddress,
@@ -317,7 +325,7 @@ async function handleCheckMembership() {
       });
 
       const hash = await walletClient.writeContract({
-        address: MEMBERSHIP_LOCK_ADDRESS as Address,
+        address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "withdraw",
         args: [walletAddress],
@@ -360,6 +368,8 @@ async function handleCheckMembership() {
 
       {/*If left is null - not connected, else left*/}
       <p>Wallet: {walletAddress ?? "not connected"}</p> 
+
+      <p>Contract address: {membershipLockAddress}</p>
 
       {/* contractOwnerAddress 管理员地址 */}
       <p>Contract owner: {contractOwnerAddress ?? "not loaded"}</p>
