@@ -53,13 +53,13 @@ declare global {
     transport: http("http://127.0.0.1:8545"),
   });
 
-  const currentDeployment = getDeploymentByChainId(31337);
+ /* const currentDeployment = getDeploymentByChainId(31337);
 
   if(currentDeployment === null){
     throw new Error("Missing local deployment for chainId 31337");
   }
 
-  const membershipLockAddress = currentDeployment.membershipLock as Address;
+  const membershipLockAddress = currentDeployment.membershipLock as Address;*/
   
 
 // 创建一个页面状态 accessState: 初始值是 "locked"
@@ -93,7 +93,46 @@ const [withdrawStatus, setWithdrawStatus] = useState<WithdrawStatus>("idle");
 //保存提现交易 hash; 开始无交易, 空字符串
 const [withdrawTxHash, setWithdrawTxHash] = useState<string>("");
 
+//当前网络ID
+const [currentChainId, setCurrentChainId] = useState<number |null>(null);
 
+//如果知道 chainId, 就根据 chainId 查 deployment
+const currentDeployment = currentChainId === null ? null : getDeploymentByChainId(currentChainId);
+
+//如果有 deployment, 就取 membershipLock 地址
+const membershipLockAddress = currentDeployment === null ? null : (currentDeployment.membershipLock as Address);
+
+//如果已经知道 chainId, 但找不到 deployment = 不支持的网络
+const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
+
+//读取 MetaMask 当前网络 chainId
+async function handleLoadChainId() {
+  setWalletError(null);
+
+  if (window.ethereum === undefined) {
+    setWalletError("MetaMask is not installed");
+    return;
+  }
+
+  //chainIdHex: MetaMask 返回的 chainId 是十六进制字符串
+  try {
+    const chainIdHex = await window.ethereum.request({
+      method: "eth_chainId",
+    }) as string;
+
+    //把十六进制字符串转换成十进制数字
+    const chainId = Number.parseInt(chainIdHex, 16);
+
+    setCurrentChainId(chainId);
+
+  } catch (error) {
+    console.log("Failed to read chainId:", error);
+
+    setWalletError("Failed to read network");
+
+  }
+  
+}
 
 async function handleConnectWallet(){
   //每次重新连接钱包前，先清空旧错误
@@ -110,7 +149,12 @@ async function handleConnectWallet(){
     method: "eth_requestAccounts"
   }) as string[];
 
-  setWalletAddress(accounts[0]  as Address);} catch {
+  setWalletAddress(accounts[0]  as Address);
+
+  //读取当前 MetaMask 网络 chainId
+  await handleLoadChainId();
+
+} catch {
     setWalletError("Failed to connect wallet");
   }
 }
@@ -118,6 +162,11 @@ async function handleConnectWallet(){
 //去链上读取 owner(), 然后把结果放进 contractOwnerAddress, 管理员地址
 async function handleLoadOwner () {
   setMembershipError(null);
+
+  if (membershipLockAddress === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
 
   try{
     // @ts-ignore viem type inference is stricter than this local demo needs.
@@ -139,6 +188,11 @@ async function handleLoadOwner () {
 async function handleLoadContractBalance() {
   setMembershipError(null);
 
+if (membershipLockAddress === null) {
+  setMembershipError("Unsupported network");
+  return;
+}
+
   try{
     const balance = await publicClient.getBalance({
       address: membershipLockAddress,
@@ -155,6 +209,11 @@ async function handleLoadContractBalance() {
 //前端从链上 MembershipLock 合约读取会员价格 price, 并显示在页面上。
 async function handleLoadPrice() {
   setMembershipError(null);
+
+if (membershipLockAddress === null) {
+  setMembershipError("Unsupported network");
+  return;
+}
 
   //尝试执行读取链上数据的代码, 如果失败就进入 catch
   
@@ -192,6 +251,11 @@ async function handleCheckMembership() {
   //立刻结束handleCheckMembership 函数
     return;
   }
+  
+  if (membershipLockAddress === null) {
+  setMembershipError("Unsupported network");
+  return;
+}
     setIsCheckingMembership(true);
 
     try{
@@ -245,6 +309,11 @@ async function handleCheckMembership() {
       if(walletAddress === null){
         setAccessState("locked");
         setMembershipError("Please connect wallet first");
+        return;
+      }
+
+      if (membershipLockAddress === null) {
+        setMembershipError("Unsupported network");
         return;
       }
 
@@ -308,6 +377,11 @@ async function handleCheckMembership() {
       return;
     }
 
+    if (membershipLockAddress === null) {
+      setMembershipError("Unsupported network");
+      return;
+}
+
     if(!isCurrentWalletOwner){
       setMembershipError("Only owner can withdraw");
       return;
@@ -358,7 +432,7 @@ async function handleCheckMembership() {
   //当前钱包是否为owner, .toLowerCase表示地址变小写
   const isCurrentWalletOwner = walletAddress !== null &&
     contractOwnerAddress !== null &&
-    walletAddress.toLowerCase() === contractOwnerAddress.toLocaleLowerCase();
+    walletAddress.toLowerCase() === contractOwnerAddress.toLowerCase();
 
 
 //JSX
@@ -369,7 +443,14 @@ async function handleCheckMembership() {
       {/*If left is null - not connected, else left*/}
       <p>Wallet: {walletAddress ?? "not connected"}</p> 
 
-      <p>Contract address: {membershipLockAddress}</p>
+      <p>Network chainId: {currentChainId ?? "not loaded"}</p>
+
+      {/*只有 isUnsupportedNetwork 为 true 时, 才显示 Unsupported network*/}
+      {isUnsupportedNetwork && (
+        <p>Unsupported network</p>
+      )}
+
+      <p>Contract address: {membershipLockAddress ?? "not available"}</p>
 
       {/* contractOwnerAddress 管理员地址 */}
       <p>Contract owner: {contractOwnerAddress ?? "not loaded"}</p>
@@ -408,7 +489,8 @@ async function handleCheckMembership() {
 
       <p>Withdraw status: {withdrawStatus}</p>
       
-      //&&:只有提现交易 hash 存在时, 才显示这一段
+      {/*&&:只有提现交易 hash 存在时, 才显示这一段*/}
+
       {withdrawTxHash !== "" && (
         <p>Withdraw transaction hash: {withdrawTxHash}</p>
       )}
