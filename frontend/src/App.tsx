@@ -46,12 +46,12 @@ declare global {
 
   // publicClient 用来读取链上公开数据，不需要钱包签名
 
-  const publicClient = createPublicClient({
+  /*const publicClient = createPublicClient({
     chain: hardhat,
 
       // 指定 RPC 地址。
     transport: http("http://127.0.0.1:8545"),
-  });
+  });*/
 
  /* const currentDeployment = getDeploymentByChainId(31337);
 
@@ -104,6 +104,16 @@ const membershipLockAddress = currentDeployment === null ? null : (currentDeploy
 
 //如果已经知道 chainId, 但找不到 deployment = 不支持的网络
 const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
+
+//如果当前 chainId 不是 31337, 就暂时没有 publicClient
+const publicClient = 
+  currentChainId ===31337
+  ? createPublicClient({
+    chain: hardhat,
+    transport: http("http://127.0.0.1:8545"),
+  })
+  : null;
+
 
 //读取 MetaMask 当前网络 chainId
 async function handleLoadChainId() {
@@ -163,7 +173,8 @@ async function handleConnectWallet(){
 async function handleLoadOwner () {
   setMembershipError(null);
 
-  if (membershipLockAddress === null) {
+  //如果没有合约地址, 或者没有 publicClient, 就停止
+  if (membershipLockAddress === null || publicClient === null) {
     setMembershipError("Unsupported network");
     return;
   }
@@ -188,7 +199,7 @@ async function handleLoadOwner () {
 async function handleLoadContractBalance() {
   setMembershipError(null);
 
-if (membershipLockAddress === null) {
+if (membershipLockAddress === null || publicClient === null) {
   setMembershipError("Unsupported network");
   return;
 }
@@ -210,7 +221,7 @@ if (membershipLockAddress === null) {
 async function handleLoadPrice() {
   setMembershipError(null);
 
-if (membershipLockAddress === null) {
+if (membershipLockAddress === null || publicClient === null) {
   setMembershipError("Unsupported network");
   return;
 }
@@ -242,6 +253,7 @@ if (membershipLockAddress === null) {
 
 async function handleCheckMembership() {
   setMembershipError(null);
+
   if(walletAddress === null){
     setAccessState("locked");
 
@@ -252,7 +264,7 @@ async function handleCheckMembership() {
     return;
   }
   
-  if (membershipLockAddress === null) {
+if (membershipLockAddress === null || publicClient === null) {
   setMembershipError("Unsupported network");
   return;
 }
@@ -312,7 +324,7 @@ async function handleCheckMembership() {
         return;
       }
 
-      if (membershipLockAddress === null) {
+      if (membershipLockAddress === null || publicClient === null) {
         setMembershipError("Unsupported network");
         return;
       }
@@ -377,7 +389,7 @@ async function handleCheckMembership() {
       return;
     }
 
-    if (membershipLockAddress === null) {
+    if (membershipLockAddress === null || publicClient === null) {
       setMembershipError("Unsupported network");
       return;
 }
@@ -495,7 +507,7 @@ async function handleCheckMembership() {
         <p>Withdraw transaction hash: {withdrawTxHash}</p>
       )}
 
-      //如果当前钱包是 owner, 才显示里面的按钮
+      {/*如果当前钱包是 owner, 才显示里面的按钮*/}
       {isCurrentWalletOwner && (
         <button
           type='button'
