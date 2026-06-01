@@ -1,5 +1,5 @@
 //useState状态变化 locked/unlocked
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import { 
   createPublicClient,
@@ -8,7 +8,7 @@ import {
   http, 
  // parseEther,   //ETH 转成 wei
   formatEther,  //把链上 wei 转成人类可读 ETH 字符串
-  type Address 
+  type Address, 
 } from 'viem';
 import { hardhat } from "viem/chains";
 
@@ -29,8 +29,10 @@ type WithdrawStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "fail
 // EthereumProvider = MetaMask 注入的 ethereum 对象起的类型名字
 type EthereumProvider = {
   //eth_requestAccounts : 请求用户授权当前网站访问钱包账户
-  //
   request: (args: {method: string; params?: unknown[]}) => Promise<unknown>;
+  //on: 监听, removeListener: 取消监听
+  on? : (eventName: string, handler: (...args: unknown[]) => void) => void;
+  removeListener? : (eventName: string, handler: (...args: unknown[]) => void) => void;
 };
 
 
@@ -446,6 +448,70 @@ if (membershipLockAddress === null || publicClient === null) {
     contractOwnerAddress !== null &&
     walletAddress.toLowerCase() === contractOwnerAddress.toLowerCase();
 
+  //加入监听, 给 useEffect 一个函数, React 会在合适的时候执行
+  useEffect(() =>{
+    //如果没有 MetaMask, 就直接结束
+    if (window.ethereum === undefined) {
+      return;
+    }
+
+    //如果当前钱包没有 on 这个监听方法, 也直接结束
+    if(window.ethereum.on === undefined) {
+      return;
+    }
+
+    //处理账号切换
+    const handleAccountsChanged = (accounts: unknown) => {
+      const nextAccounts = accounts as string[];
+
+      //如果数组长度是 0, 说明用户断开了网站和钱包的连接
+      if( nextAccounts.length === 0){
+        setWalletAddress(null);
+        setAccessState("locked");
+        setMembershipExpiresAtText("");
+        return;
+      }
+      
+      //如果账号数组不是空的, 就取第一个账号
+      setWalletAddress(nextAccounts[0] as Address);
+    };
+
+    // 处理网络变化
+    const handleChainChanged = (chainIdHex: unknown) => {
+
+      //把 MetaMask 给的十六进制 chainId 转成普通数字
+      const nextChainId = Number.parseInt(chainIdHex as string, 16);
+
+      setCurrentChainId(nextChainId);
+      setAccessState("locked");
+      setMembershipExpiresAtText("");
+      setMembershipPrice("");
+      setMembershipPriceRaw(null);
+      setContractOwnerAddress(null);
+      setContractBalance("");
+      setMembershipError(null);
+      setPurchaseStatus("idle");
+      setWithdrawStatus("idle");
+
+      setPurchaseTxHash("");
+      setWithdrawTxHash("");
+
+    }
+
+    //MetaMask 监听 accountsChanged 事件; 当账号变化时, 执行 handleAccountsChanged函数
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+
+    //当网络变化时, 执行 handleChainChanged
+    window.ethereum.on("chainChanged", handleChainChanged);
+
+    //当这个组件卸载时, 执行这个函数做清理, 把 accountsChanged 事件上绑定的 handleAccountsChanged 函数移除掉
+    return () => {
+      window.ethereum?.removeListener?.("accountsChanged", handleAccountsChanged);
+
+      //页面卸载时，把 chainChanged 监听也取消掉
+      window.ethereum?.removeListener?.("chainChanged", handleChainChanged);
+    };
+  }, []);
 
 //JSX
   return (
