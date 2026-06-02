@@ -1,5 +1,5 @@
 //useState状态变化 locked/unlocked
-import { useState, useEffect } from 'react'
+import { useState, useEffect , useMemo } from 'react'
 
 import { 
   createPublicClient,
@@ -107,14 +107,17 @@ const membershipLockAddress = currentDeployment === null ? null : (currentDeploy
 //如果已经知道 chainId, 但找不到 deployment = 不支持的网络
 const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
 
-//如果当前 chainId 不是 31337, 就暂时没有 publicClient
-const publicClient = 
-  currentChainId ===31337
-  ? createPublicClient({
+//useMemo:如果依赖没变, 就不要重新计算
+const publicClient = useMemo(() => {
+  if(currentChainId !== 31337){
+    return null;
+  }
+
+  return createPublicClient({
     chain: hardhat,
     transport: http("http://127.0.0.1:8545"),
-  })
-  : null;
+  });
+}, [currentChainId]);
 
 
 //读取 MetaMask 当前网络 chainId
@@ -496,7 +499,7 @@ if (membershipLockAddress === null || publicClient === null) {
       setPurchaseTxHash("");
       setWithdrawTxHash("");
 
-    }
+    };
 
     //MetaMask 监听 accountsChanged 事件; 当账号变化时, 执行 handleAccountsChanged函数
     window.ethereum.on("accountsChanged", handleAccountsChanged);
@@ -512,6 +515,38 @@ if (membershipLockAddress === null || publicClient === null) {
       window.ethereum?.removeListener?.("chainChanged", handleChainChanged);
     };
   }, []);
+
+  //网络和合约地址准备好后, 自动读取 price / owner / balance
+  //membershipLockAddress 或 publicClient 变化时, 自动执行读取 price 的逻辑
+  useEffect(() => {
+    if (membershipLockAddress === null || publicClient === null){
+      setMembershipPrice("");
+      setMembershipPriceRaw(null);
+      return;
+    }
+
+    //void 只要执行 不需要拿回它返回结果
+    void handleLoadPrice();
+  }, [membershipLockAddress, publicClient]);
+
+  useEffect(() => {
+    if (membershipLockAddress === null || publicClient === null){
+      setContractOwnerAddress(null);
+      return;
+    }
+
+    void handleLoadOwner();
+  }, [membershipLockAddress, publicClient]);
+
+
+  useEffect(() => {
+  if (membershipLockAddress === null || publicClient === null) {
+    setContractBalance("");
+    return;
+  }
+
+  void handleLoadContractBalance();
+}, [membershipLockAddress, publicClient]);
 
 //JSX
   return (
