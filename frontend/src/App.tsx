@@ -107,17 +107,26 @@ const membershipLockAddress = currentDeployment === null ? null : (currentDeploy
 //如果已经知道 chainId, 但找不到 deployment = 不支持的网络
 const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
 
+
+const currentChain = useMemo(() => {
+  if(currentChainId !==31337){
+    return null;
+  }
+
+  return hardhat;
+}, [currentChainId]);
+
 //useMemo:如果依赖没变, 就不要重新计算
 const publicClient = useMemo(() => {
-  if(currentChainId !== 31337){
+  if(currentChain === null){
     return null;
   }
 
   return createPublicClient({
-    chain: hardhat,
+    chain: currentChain,
     transport: http("http://127.0.0.1:8545"),
   });
-}, [currentChainId]);
+}, [currentChain]);
 
 
 //读取 MetaMask 当前网络 chainId
@@ -329,7 +338,7 @@ if (membershipLockAddress === null || publicClient === null) {
         return;
       }
 
-      if (membershipLockAddress === null || publicClient === null) {
+      if (membershipLockAddress === null || publicClient === null || currentChain === null) {
         setMembershipError("Unsupported network");
         return;
       }
@@ -346,7 +355,7 @@ if (membershipLockAddress === null || publicClient === null) {
 
         //用来创建一个钱包客户端
         const walletClient = createWalletClient({
-          chain: hardhat,
+          chain: currentChain,
           transport: custom(window.ethereum),
         });
 
@@ -394,7 +403,7 @@ if (membershipLockAddress === null || publicClient === null) {
       return;
     }
 
-    if (membershipLockAddress === null || publicClient === null) {
+    if (membershipLockAddress === null || publicClient === null || currentChain === null) {
       setMembershipError("Unsupported network");
       return;
 }
@@ -410,7 +419,7 @@ if (membershipLockAddress === null || publicClient === null) {
       setWithdrawTxHash("");
 
       const walletClient = createWalletClient({
-        chain: hardhat,
+        chain: currentChain,
         //用浏览器钱包提供的 provider 发送请求
         transport: custom(window.ethereum),
       });
@@ -529,7 +538,7 @@ if (membershipLockAddress === null || publicClient === null) {
     void handleLoadPrice();
   }, [membershipLockAddress, publicClient]);
 
-  
+
   useEffect(() => {
     if (membershipLockAddress === null || publicClient === null){
       setContractOwnerAddress(null);
@@ -550,7 +559,7 @@ if (membershipLockAddress === null || publicClient === null) {
 }, [membershipLockAddress, publicClient]);
 
 
-
+//当钱包、合约地址、读链工具准备好或发生变化时, 自动检查当前钱包的会员状态
 useEffect(() => {
   if (walletAddress === null){
     setAccessState("locked");
