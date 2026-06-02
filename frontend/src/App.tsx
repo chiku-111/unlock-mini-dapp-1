@@ -529,6 +529,7 @@ if (membershipLockAddress === null || publicClient === null) {
     void handleLoadPrice();
   }, [membershipLockAddress, publicClient]);
 
+  
   useEffect(() => {
     if (membershipLockAddress === null || publicClient === null){
       setContractOwnerAddress(null);
@@ -547,6 +548,25 @@ if (membershipLockAddress === null || publicClient === null) {
 
   void handleLoadContractBalance();
 }, [membershipLockAddress, publicClient]);
+
+
+
+useEffect(() => {
+  if (walletAddress === null){
+    setAccessState("locked");
+    setMembershipExpiresAtText("");
+    return;
+  }
+
+  if(membershipLockAddress === null || publicClient === null){
+    setAccessState("locked");
+    setMembershipExpiresAtText("");
+    return;
+  }
+
+  void handleCheckMembership();
+}, [walletAddress, membershipLockAddress, publicClient]);
+
 
 //JSX
   return (
