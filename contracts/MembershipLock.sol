@@ -34,8 +34,11 @@ contract MembershipLock{
     //给某个用户授予会员资格
     function grantMembership(address user, uint256 duration) public{
 
-        //权限检查:只有 owner 可以授予会员
         require(msg.sender == owner, "Only owner can grant");
+
+        //在更新会员信息前, 先验证授权对象和授权时长
+        require(user != address(0), "Invalid user");
+        require(duration > 0, "Invalid duration");
 
         // user会员到期时间设置为: 当前区块时间 + 会员有效时长（秒）
         uint256 expiresAt = block.timestamp + duration;

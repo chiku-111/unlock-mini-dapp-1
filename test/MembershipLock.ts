@@ -90,6 +90,29 @@ describe("MembershipLock", function(){
         
     });
 
+    //owner不能授权给0地址会员
+    it("owner cannot grant membership to zero address", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner] = await ethers.getSigners();
+
+
+        await expect(
+            membershipLock.connect(owner).grantMembership(ethers.ZeroAddress, 30 * 24 * 60 * 60)
+        ).to.be.revertedWith("Invalid user");
+    });
+
+
+    //owner cannot grant 0s = duration 不能是 0
+    it("owner cannot grant membership with zero duration", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner, user] = await ethers.getSigners();
+
+        await expect(
+            membershipLock.connect(owner).grantMembership(user.address, 0)
+        ).to.be.revertedWith("Invalid duration");
+        
+    });
+
     //
     it("user cannot purchase membership without payment", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");
