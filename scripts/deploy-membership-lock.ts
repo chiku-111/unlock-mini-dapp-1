@@ -8,7 +8,10 @@ import { writeFileSync, mkdirSync } from "node:fs";
 //join = Node.js 里的路径拼接函数
 import { join } from "node:path";
 
-const { ethers } = await network.create("localhost");
+//如果命令行指定了 DEPLOY_NETWORK, 就用指定的网络
+const networkName = process.env.DEPLOY_NETWORK ??  "localhost";
+
+const { ethers } = await network.create(networkName);
 
 const membershipLock = await ethers.deployContract("MembershipLock");
 
@@ -18,9 +21,13 @@ await membershipLock.waitForDeployment();
 //getAddress() 返回部署后的合约地址
 const membershipLockAddress = await membershipLock.getAddress();
 
+//问当前连接的区块链：是哪条链
+const providerNetwork = await ethers.provider.getNetwork();
+const chainId = Number(providerNetwork.chainId);
+
 const deployment = {
-    chainId: 31337,
-    network: "localhost",
+    chainId: chainId,
+    network: networkName,
     membershipLock: membershipLockAddress,
     deployedAt: new Date().toISOString(),
 };
@@ -29,7 +36,7 @@ const deployment = {
 const deploymentsDir = join("frontend", "src", "deployments");
 
 //最终要写入的文件路径
-const deploymentPath = join(deploymentsDir, "31337.json");
+const deploymentPath = join(deploymentsDir, "${chainId}.json");
 
 //创建 deploymentsDir 这个文件夹; 如果它已经存在，就不要报错; 如果中间路径不存在，也一起创建
 mkdirSync(deploymentsDir, { recursive: true});
@@ -40,6 +47,9 @@ writeFileSync(
     `${JSON.stringify(deployment, null, 2)}\n`
 )
 
-console.log("MembershipLock deployed to:", membershipLockAddress);
 
+console.log("Network:", networkName);
+console.log("ChainId:", chainId);
+console.log("MembershipLock deployed to:", membershipLockAddress);
 console.log("Deployment written to:", deploymentPath);
+
