@@ -10,7 +10,8 @@ import {
   formatEther,  //把链上 wei 转成人类可读 ETH 字符串
   type Address, 
 } from 'viem';
-import { hardhat } from "viem/chains";
+
+import { hardhat, sepolia } from "viem/chains";
 
 // 引入 MembershipLock 合约的 ABI
 import { MEMBERSHIP_LOCK_ABI } from "./abi/MembershipLockAbi";
@@ -109,11 +110,16 @@ const isUnsupportedNetwork = currentChainId !== null && currentDeployment === nu
 
 
 const currentChain = useMemo(() => {
-  if(currentChainId !==31337){
-    return null;
+  if(currentChainId === 31337){
+    return hardhat;
   }
 
-  return hardhat;
+  if(currentChainId === 11155111){
+    return sepolia;
+  }
+
+  return null;
+
 }, [currentChainId]);
 
 //useMemo:如果依赖没变, 就不要重新计算
@@ -122,11 +128,25 @@ const publicClient = useMemo(() => {
     return null;
   }
 
+  if(currentChainId === 31337){
+    return createPublicClient({
+      chain: currentChain,
+      transport: http("http://127.0.0.1:8545"),
+    });
+  }
+
+  //从 Vite 环境变量中读取 Sepolia RPC URL
+  const sepoliaRpcUrl = import.meta.env.VITE_SEPOLIA_RPC_URL;
+
+  if(sepoliaRpcUrl === undefined) {
+    return null;
+  }
+
   return createPublicClient({
     chain: currentChain,
-    transport: http("http://127.0.0.1:8545"),
+    transport: http(sepoliaRpcUrl),
   });
-}, [currentChain]);
+}, [currentChain, currentChainId]);
 
 
 //读取 MetaMask 当前网络 chainId
@@ -365,7 +385,7 @@ if (membershipLockAddress === null || publicClient === null) {
           abi: MEMBERSHIP_LOCK_ABI,
           functionName: "purchaseMembership",
           account: walletAddress,
-          chain: hardhat,
+          chain: currentChain,
 
           value:membershipPriceRaw,
 
@@ -430,7 +450,7 @@ if (membershipLockAddress === null || publicClient === null) {
         functionName: "withdraw",
         args: [walletAddress],
         account: walletAddress,
-        chain: hardhat,
+        chain: currentChain,
       });
 
       //把提现交易 hash 保存

@@ -36,7 +36,7 @@ const deployment = {
 const deploymentsDir = join("frontend", "src", "deployments");
 
 //最终要写入的文件路径
-const deploymentPath = join(deploymentsDir, "${chainId}.json");
+const deploymentPath = join(deploymentsDir, `${chainId}.json`);
 
 //创建 deploymentsDir 这个文件夹; 如果它已经存在，就不要报错; 如果中间路径不存在，也一起创建
 mkdirSync(deploymentsDir, { recursive: true});
