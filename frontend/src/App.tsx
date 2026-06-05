@@ -694,7 +694,7 @@ useEffect(() => {
           <>
           {" "}
           <a
-            href={'${etherscanBaseUrl}/tx/${purchaseTxHash}'}
+            href={`${etherscanBaseUrl}/tx/${purchaseTxHash}`}
             target='_blank'
             rel="noreferrer"
             >
