@@ -108,6 +108,9 @@ const membershipLockAddress = currentDeployment === null ? null : (currentDeploy
 //如果已经知道 chainId, 但找不到 deployment = 不支持的网络
 const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
 
+//Etherscan 基础地址
+const etherscanBaseUrl = currentChainId === 11155111 ? "https://sepolia.etherscan.io" : null;
+
 
 const currentChain = useMemo(() => {
   if(currentChainId === 31337){
@@ -651,10 +654,22 @@ useEffect(() => {
 
       <p>Withdraw status: {withdrawStatus}</p>
       
-      {/*&&:只有提现交易 hash 存在时, 才显示这一段*/}
-
+      {/*只有提现交易 hash 存在时, 才显示*/}
       {withdrawTxHash !== "" && (
-        <p>Withdraw transaction hash: {withdrawTxHash}</p>
+        <p>Withdraw transaction hash: {withdrawTxHash}
+        {etherscanBaseUrl !== null && (
+      <>
+        {" "}
+        <a
+          href={`${etherscanBaseUrl}/tx/${withdrawTxHash}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          View on Etherscan
+        </a>
+      </>
+      )}
+        </p>
       )}
 
       {/*如果当前钱包是 owner, 才显示里面的按钮*/}
@@ -672,9 +687,22 @@ useEffect(() => {
 
 
       
-      {/*如果 purchaseTxHash 不是空字符串, 才显示交易 hash*/}
+      {/*如果 purchaseTxHash 不是空字符串, 才显示后面, 点击后进入 Sepolia Etherscan*/}
       {purchaseTxHash !== "" &&(
-        <p>Transaction hash: {purchaseTxHash}</p>
+        <p>Transaction hash: {purchaseTxHash}
+        {etherscanBaseUrl !== null &&(
+          <>
+          {" "}
+          <a
+            href={'${etherscanBaseUrl}/tx/${purchaseTxHash}'}
+            target='_blank'
+            rel="noreferrer"
+            >
+              View on Etherscan
+            </a>
+          </>
+        )}
+          </p>
       )}
 
       {/* 按钮传函数名，不直接调用 */}
