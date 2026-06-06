@@ -217,15 +217,16 @@ async function handleLoadOwner () {
   }
 
   try{
-    // @ts-ignore viem type inference is stricter than this local demo needs.
-    const owner = await publicClient.readContract({
+    const client = publicClient as any;
+
+    const owner = (await client.readContract({
       address: membershipLockAddress,
       abi: MEMBERSHIP_LOCK_ABI,
       functionName: "owner",
-    });
+    }))as Address;
 
     //刚才读到的 owner 地址放进 React state
-    setContractOwnerAddress(owner as Address);
+    setContractOwnerAddress(owner);
   }catch(error){
     console.error("Failed to read contract owner:", error);
   }
@@ -266,12 +267,12 @@ if (membershipLockAddress === null || publicClient === null) {
   //尝试执行读取链上数据的代码, 如果失败就进入 catch
   
   try{
-    // @ts-ignore viem type inference is stricter than this local demo needs.
-    const price = await publicClient.readContract({
+    const client = publicClient as any;
+    const price = (await client.readContract({
       address: membershipLockAddress,
       abi: MEMBERSHIP_LOCK_ABI,
       functionName: "price",
-    });
+    }))as bigint;
 
     console.log("Raw price in wei:", price);
     console.log("Formatted price in ETH:", formatEther(price));
@@ -308,25 +309,25 @@ if (membershipLockAddress === null || publicClient === null) {
     setIsCheckingMembership(true);
 
     try{
-      // @ts-ignore viem type inference is stricter than this local demo needs.
-      const isMember = await publicClient.readContract({
+      const client = publicClient as any;
+
+      const isMember = (await client.readContract({
         //not walletAddress, is contract address: 去哪里查
         address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "hasValidMembership",
         //walletAddress: 查谁
         args: [walletAddress as Address],
-      });
+      })) as boolean;
 
       setAccessState(isMember ? "unlocked" : "locked");
 
-      // @ts-ignore viem type inference is stricter than this local demo needs.
-      const expiresAt = await publicClient.readContract({
+      const expiresAt = (await client.readContract({
         address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "membershipExpiresAt",
         args: [walletAddress as Address],
-      });
+      })) as bigint;
 
       if(expiresAt === 0n){
         setMembershipExpiresAtText("not set"); //显示: 没有设置

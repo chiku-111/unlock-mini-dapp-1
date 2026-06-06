@@ -1,3 +1,4 @@
+import type { Abi } from "viem";
 export const MEMBERSHIP_LOCK_ABI = [
     {
         type:"function",
@@ -73,4 +74,4 @@ export const MEMBERSHIP_LOCK_ABI = [
     }
 
 
-] as const;
+] as const satisfies Abi;
