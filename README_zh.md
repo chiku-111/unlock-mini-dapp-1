@@ -47,7 +47,7 @@ frontend/src/abi/MembershipLockAbi.ts     前端 ABI
 frontend/src/deployments/                 多网络合约地址
 ```
 
-项目中仍保留 `Counter.sol`、`Counter.t.sol`、`MiniMembership.sol` 等学习/模板文件，它们不是当前主线合约。
+`Counter.sol`、`Counter.t.sol`、`MiniMembership.sol` 等学习/模板文件已保留在 `docs/learning/` 中，它们不是当前主线合约。
 
 ## 合约功能
 
