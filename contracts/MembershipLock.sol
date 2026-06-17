@@ -73,12 +73,12 @@ contract MembershipLock{
         
         uint256 currentExpiresAt = membershipExpiresAt[msg.sender];
 
-        //如果会员还有效,startTime = 当前到期时间,or startTime = 当前区块时间
-        uint256 startTime = currentExpiresAt > block.timestamp
-            ? currentExpiresAt
-            : block.timestamp;
-
-        uint256 expiresAt = startTime + 30 days;
+        //续费规则: 从 当前到期时间 和 当前区块时间 里选择更晚的那个时间继续加 30 天
+        uint256 expiresAt = (
+            currentExpiresAt > block.timestamp
+                ? currentExpiresAt
+                : block.timestamp
+        ) + 30 days;
 
         membershipExpiresAt[msg.sender] = expiresAt;
 
