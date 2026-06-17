@@ -2,16 +2,17 @@
 pragma solidity ^0.8.28;
 
 contract MembershipLock{
-    //管理员地址保存
     address public owner;
 
-    // 会员价格，用户购买会员时必须支付 0.01 ETH
     uint256 public price = 0.01 ether;
 
     //address 对应会员到期时间戳
     mapping(address => uint256) public membershipExpiresAt;
 
-    //定义会员购买事件，用来记录购买者、支付金额和会员到期时间
+    //某个地址是否被允许访问
+    mapping(address => bool) public aclAllowlist;
+
+    //定义事件
     event MembershipPurchased(address indexed user, uint256 amount, uint256 expiresAt);
 
     event MembershipGranted(address indexed user, uint256 duration, uint256 expiresAt);
@@ -25,10 +26,27 @@ contract MembershipLock{
 
 //modifier在函数真正执行之前, 先执行一段检查逻辑
     modifier onlyOwner(){
-        require(msg.sender == owner, "Only owner can withdraw");
+        require(msg.sender == owner, "Only owner");
 
-        //如果上面的 require 检查通过, 就继续执行被 onlyOwner 修饰的函数主体
         _;
+    }
+
+    //管理员把用户加入 ACL 白名单
+    function addToAcl(address user) external onlyOwner {
+    require(user != address(0), "Invalid user");
+
+    aclAllowlist[user] = true;
+    }
+
+    //把用户移出 ACL 白名单
+    function removeFromAcl(address user) external onlyOwner {
+    require(user != address(0), "Invalid user");
+
+    aclAllowlist[user] = false;
+    }
+
+    function canAccessByACL(address user) public view returns (bool){
+        return aclAllowlist[user];
     }
 
     //给某个用户授予会员资格
@@ -36,7 +54,6 @@ contract MembershipLock{
 
         require(msg.sender == owner, "Only owner can grant");
 
-        //在更新会员信息前, 先验证授权对象和授权时长
         require(user != address(0), "Invalid user");
         require(duration > 0, "Invalid duration");
 

@@ -17,11 +17,78 @@ describe("MembershipLock", function(){
         expect(await membershipLock.owner()).to.equal(deployer.address);
     });
 
+    //ACL tests
+    it("ACL: should deny access by default", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [, user] = await ethers.getSigners();
+
+        expect(await membershipLock.canAccessByACL(user.address)).to.equal(false);
+    });
+
+
+    it("ACL: owner can add user to allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner, user] = await ethers.getSigners();
+
+        await membershipLock.connect(owner).addToAcl(user.address);
+
+        expect(await membershipLock.canAccessByACL(user.address)).to.equal(true);
+    });
+
+    it("ACL: owner can remove user from allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner, user] = await ethers.getSigners();
+
+        await membershipLock.connect(owner).addToAcl(user.address);
+        expect(await membershipLock.canAccessByACL(user.address)).to.equal(true);
+
+        await membershipLock.connect(owner).removeFromAcl(user.address);
+        expect(await membershipLock.canAccessByACL(user.address)).to.equal(false);
+    });
+
     it("should return false by default", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");        
         const [, user] = await ethers.getSigners();
         expect(await membershipLock.hasValidMembership(user.address)).to.equal(false);
     });
+
+    //ACL security tests
+    it("ACL: non-owner cannot add user to allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [, user] = await ethers.getSigners();
+
+        await expect(
+            membershipLock.connect(user).addToAcl(user.address)
+        ).to.be.revertedWith("Only owner");
+    });
+
+    it("ACL: non-owner cannot remove user from allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [, user] = await ethers.getSigners();
+
+        await expect(
+            membershipLock.connect(user).removeFromAcl(user.address)
+        ).to.be.revertedWith("Only owner");
+    });
+
+    it("ACL: owner cannot add zero address to allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner] = await ethers.getSigners();
+
+        await expect(
+            membershipLock.connect(owner).addToAcl(ethers.ZeroAddress)
+        ).to.be.revertedWith("Invalid user");
+    });
+
+    it("ACL: owner cannot remove zero address from allowlist", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner] = await ethers.getSigners();
+
+        await expect(
+            membershipLock.connect(owner).removeFromAcl(ethers.ZeroAddress)
+        ).to.be.revertedWith("Invalid user");
+    });
+
 
     //owner 可以给用户授予会员, membershipExpiresAt[user] = block.timestamp + duration;
     it("owner can grant membership", async function () {
@@ -316,7 +383,7 @@ describe("MembershipLock", function(){
         await expect(
             // 使用非 owner 的 user 调用 withdraw, 并传入 recipient 作为收款地址
             membershipLock.connect(user).withdraw(recipient.address)
-        ).to.be.revertedWith("Only owner can withdraw");
+        ).to.be.revertedWith("Only owner");
     })
 
     //owner 调用 withdraw, 但收款地址是 address(0), 失败
