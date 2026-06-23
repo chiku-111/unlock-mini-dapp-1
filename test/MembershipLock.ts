@@ -89,6 +89,93 @@ describe("MembershipLock", function(){
         ).to.be.revertedWith("Invalid user");
     });
 
+    //RBAC tests
+    it("RBAC: should deny access by default", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [, user] = await ethers.getSigners();
+
+        expect(await membershipLock.canAccessByRBAC(user.address)).to.equal(false);
+});
+
+
+    it("RBAC: owner can grant operator role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    //从合约里读取 OPERATOR_ROLE 的真实 bytes32 值，并保存到 operatorRole 变量里
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await membershipLock.connect(owner).grantRole(operatorRole, user.address);
+
+    expect(await membershipLock.hasRole(operatorRole, user.address)).to.equal(true);
+    expect(await membershipLock.canAccessByRBAC(user.address)).to.equal(true);
+});
+
+    it("RBAC: owner can revoke operator role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await membershipLock.connect(owner).grantRole(operatorRole, user.address);
+    await membershipLock.connect(owner).revokeRole(operatorRole, user.address);
+
+    expect(await membershipLock.hasRole(operatorRole, user.address)).to.equal(false);
+    expect(await membershipLock.canAccessByRBAC(user.address)).to.equal(false);
+});
+
+
+    //RBAC security tests
+    it("RBAC: non-owner cannot grant role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [, user] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await expect(
+        membershipLock.connect(user).grantRole(operatorRole, user.address)
+    ).to.be.revertedWith("Only owner");
+});
+
+
+    it("RBAC: non-owner cannot revoke role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await membershipLock.connect(owner).grantRole(operatorRole, user.address);
+
+    await expect(
+        membershipLock.connect(user).revokeRole(operatorRole, user.address)
+    ).to.be.revertedWith("Only owner");
+});
+
+
+    it("RBAC: owner cannot grant role to zero address", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await expect(
+        membershipLock.connect(owner).grantRole(operatorRole, ethers.ZeroAddress)
+    ).to.be.revertedWith("Invalid user");
+});
+
+    //owner 不能对零地址执行 revokeRole
+    it("RBAC: owner cannot revoke role from zero address", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await expect(
+        membershipLock.connect(owner).revokeRole(operatorRole, ethers.ZeroAddress)
+    ).to.be.revertedWith("Invalid user");
+});
+
+
 
     //owner 可以给用户授予会员, membershipExpiresAt[user] = block.timestamp + duration;
     it("owner can grant membership", async function () {

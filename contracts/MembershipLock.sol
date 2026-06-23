@@ -12,6 +12,12 @@ contract MembershipLock{
     //某个地址是否被允许访问
     mapping(address => bool) public aclAllowlist;
 
+    //为操作员角色创建一个固定的角色编号
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+
+    mapping(bytes32 => mapping( address => bool)) public roles;
+
+
     //定义事件
     event MembershipPurchased(address indexed user, uint256 amount, uint256 expiresAt);
 
@@ -47,6 +53,31 @@ contract MembershipLock{
 
     function canAccessByACL(address user) public view returns (bool){
         return aclAllowlist[user];
+    }
+
+
+    //owner 给某个用户授予某个角色
+    function grantRole(bytes32 role, address user) external onlyOwner {
+    require(user != address(0), "Invalid user");
+
+    roles[role][user] = true;
+}
+
+    //撤销角色
+    function revokeRole(bytes32 role, address user) external onlyOwner {
+    require(user != address(0), "Invalid user");
+
+    roles[role][user] = false;
+}
+
+//用户是否拥有OPERATOR_ROLE
+    function hasRole(bytes32 role, address user) public view returns (bool) {
+    return roles[role][user];
+}
+
+    //用户能不能通过 RBAC 访问
+    function canAccessByRBAC(address user) public view returns (bool){
+        return hasRole(OPERATOR_ROLE, user);
     }
 
     //给某个用户授予会员资格
