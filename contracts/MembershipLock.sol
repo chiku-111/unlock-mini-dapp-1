@@ -6,6 +6,7 @@ contract MembershipLock{
 
     uint256 public price = 0.01 ether;
 
+    
     //address 对应会员到期时间戳
     mapping(address => uint256) public membershipExpiresAt;
 
@@ -16,6 +17,18 @@ contract MembershipLock{
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     mapping(bytes32 => mapping( address => bool)) public roles;
+
+    //ABAC
+    uint8 public constant MIN_KYC_LEVEL = 2;
+    uint8 public constant MAX_RISK_SCORE = 50;
+
+    struct UserAttributes {
+    uint8 kycLevel;
+    uint8 riskScore;
+    bool banned;
+}
+    //每个地址对应一份 UserAttributes
+    mapping(address => UserAttributes) public userAttributes;
 
 
     //定义事件
@@ -75,10 +88,44 @@ contract MembershipLock{
     return roles[role][user];
 }
 
+
+    //设置用户属性
+    function setUserAttributes(
+    address user,
+    uint8 kycLevel,
+    uint8 riskScore,
+    bool banned
+) external onlyOwner {
+    require(user != address(0), "Invalid user");
+    require(riskScore <= 100, "Invalid risk score");
+
+//保存用户属性
+    userAttributes[user] = UserAttributes({
+        kycLevel: kycLevel,
+        riskScore: riskScore,
+        banned: banned
+    });
+}
+
+    //根据用户属性判断这个用户能不能访问
+    function canAccessByABAC(address user) public view returns (bool) {
+
+    //memory:把 userAttributes[user] 复制一份到临时内存里, 只在这个函数执行期间使用
+    //从 userAttributes mapping 里读取 user 的属性, 复制到临时变量 attrs 里
+    UserAttributes memory attrs = userAttributes[user];
+
+    return hasValidMembership(user)
+        && attrs.kycLevel >= MIN_KYC_LEVEL
+        && attrs.riskScore <= MAX_RISK_SCORE
+        && !attrs.banned;
+}
+
     //用户能不能通过 RBAC 访问
     function canAccessByRBAC(address user) public view returns (bool){
         return hasRole(OPERATOR_ROLE, user);
     }
+
+
 
     //给某个用户授予会员资格
     function grantMembership(address user, uint256 duration) public{

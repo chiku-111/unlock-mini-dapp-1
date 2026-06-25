@@ -175,7 +175,112 @@ describe("MembershipLock", function(){
     ).to.be.revertedWith("Invalid user");
 });
 
+    //ABAC tests
+    it("ABAC: should allow access when all conditions are met", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner, user] = await ethers.getSigners();
 
+        const duration = 60 * 60;
+
+        await membershipLock.connect(owner).grantMembership(user.address, duration);
+        await membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, false);
+
+        expect(await membershipLock.canAccessByABAC(user.address)).to.equal(true);
+    });
+
+    //没有有效会员，不能访问
+    it("ABAC: should deny access without valid membership", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    await membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, false);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
+});
+
+
+    it("ABAC: should deny access when KYC level is too low", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const duration = 60 * 60;
+
+    await membershipLock.connect(owner).grantMembership(user.address, duration);
+    await membershipLock.connect(owner).setUserAttributes(user.address, 1, 30, false);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
+});
+
+    it("ABAC: should deny access when risk score is too high", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const duration = 60 * 60;
+
+    await membershipLock.connect(owner).grantMembership(user.address, duration);
+    await membershipLock.connect(owner).setUserAttributes(user.address, 2, 80, false);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
+});
+
+   
+    it("ABAC: should deny access when user is banned", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const duration = 60 * 60;
+
+    await membershipLock.connect(owner).grantMembership(user.address, duration);
+    await membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, true);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
+});
+
+    //会员过期无法访问
+    it("ABAC: should deny access after membership expires", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const duration = 60;
+
+    await membershipLock.connect(owner).grantMembership(user.address, duration);
+    await membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, false);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(true);
+
+    //增加区块链时间, 为了让会员过期
+    await networkHelpers.time.increase(duration + 1);
+
+    expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
+});
+
+    //ABAC security tests
+    it("ABAC: non-owner cannot set user attributes", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [, user] = await ethers.getSigners();
+
+    await expect(
+        membershipLock.connect(user).setUserAttributes(user.address, 2, 30, false)
+    ).to.be.revertedWith("Only owner");
+});
+
+    it("ABAC: owner cannot set attributes for zero address", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner] = await ethers.getSigners();
+
+    await expect(
+        membershipLock.connect(owner).setUserAttributes(ethers.ZeroAddress, 2, 30, false)
+    ).to.be.revertedWith("Invalid user");
+});
+
+    it("ABAC: owner cannot set risk score above 100", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    await expect(
+        membershipLock.connect(owner).setUserAttributes(user.address, 2, 101, false)
+    ).to.be.revertedWith("Invalid risk score");
+});
 
     //owner 可以给用户授予会员, membershipExpiresAt[user] = block.timestamp + duration;
     it("owner can grant membership", async function () {
