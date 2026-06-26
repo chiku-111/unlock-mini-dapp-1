@@ -38,6 +38,19 @@ contract MembershipLock{
 
     event Withdrawn(address indexed recipient, uint256 amount);
 
+    event AclAdded(address indexed user);
+    event AclRemoved(address indexed user);
+
+    event RoleGranted(bytes32 indexed role, address indexed user);
+    event RoleRevoked(bytes32 indexed role, address indexed user);
+
+    event UserAttributesUpdated(
+        address indexed user,
+        uint8 kycLevel,
+        uint8 riskScore,
+        bool banned
+    );
+
 // constructor 会在合约部署时自动执行一次,部署合约的人为msg.sender,部署者设置为管理员 owner
     constructor(){
         owner = msg.sender;
@@ -55,6 +68,9 @@ contract MembershipLock{
     require(user != address(0), "Invalid user");
 
     aclAllowlist[user] = true;
+
+    //sent event
+    emit AclAdded(user);
     }
 
     //把用户移出 ACL 白名单
@@ -62,6 +78,8 @@ contract MembershipLock{
     require(user != address(0), "Invalid user");
 
     aclAllowlist[user] = false;
+
+    emit AclRemoved(user);
     }
 
     function canAccessByACL(address user) public view returns (bool){
@@ -74,6 +92,8 @@ contract MembershipLock{
     require(user != address(0), "Invalid user");
 
     roles[role][user] = true;
+
+    emit RoleGranted(role, user);
 }
 
     //撤销角色
@@ -81,13 +101,13 @@ contract MembershipLock{
     require(user != address(0), "Invalid user");
 
     roles[role][user] = false;
+    emit RoleRevoked(role, user);
 }
 
 //用户是否拥有OPERATOR_ROLE
     function hasRole(bytes32 role, address user) public view returns (bool) {
     return roles[role][user];
 }
-
 
     //设置用户属性
     function setUserAttributes(
@@ -105,6 +125,8 @@ contract MembershipLock{
         riskScore: riskScore,
         banned: banned
     });
+
+    emit UserAttributesUpdated(user, kycLevel, riskScore, banned);
 }
 
     //根据用户属性判断这个用户能不能访问
@@ -142,9 +164,7 @@ contract MembershipLock{
 
 
     //给某个用户授予会员资格
-    function grantMembership(address user, uint256 duration) public{
-
-        require(msg.sender == owner, "Only owner can grant");
+    function grantMembership(address user, uint256 duration) external onlyOwner{
 
         require(user != address(0), "Invalid user");
         require(duration > 0, "Invalid duration");

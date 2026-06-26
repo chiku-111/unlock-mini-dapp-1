@@ -89,6 +89,29 @@ describe("MembershipLock", function(){
         ).to.be.revertedWith("Invalid user");
     });
 
+    //ACL event test
+    it("ACL: should emit AclAdded when owner adds user", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    await expect(
+        membershipLock.connect(owner).addToAcl(user.address)
+    ).to.emit(membershipLock, "AclAdded")
+     .withArgs(user.address);
+});
+
+    it("ACL: should emit AclRemoved when owner removes user", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    await membershipLock.connect(owner).addToAcl(user.address);
+
+    await expect(
+        membershipLock.connect(owner).removeFromAcl(user.address)
+    ).to.emit(membershipLock, "AclRemoved")
+     .withArgs(user.address);
+});
+
     //RBAC tests
     it("RBAC: should deny access by default", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");
@@ -175,6 +198,34 @@ describe("MembershipLock", function(){
     ).to.be.revertedWith("Invalid user");
 });
 
+    //RBAC event test
+    it("RBAC: should emit RoleGranted when owner grants role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    //从合约里读取 OPERATOR_ROLE 的真实 bytes32 值, 保存到测试变量 operatorRole
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await expect(
+        membershipLock.connect(owner).grantRole(operatorRole, user.address)
+    ).to.emit(membershipLock, "RoleGranted")
+     .withArgs(operatorRole, user.address);
+});
+
+    it("RBAC: should emit RoleRevoked when owner revokes role", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const operatorRole = await membershipLock.OPERATOR_ROLE();
+
+    await membershipLock.connect(owner).grantRole(operatorRole, user.address);
+
+    await expect(
+        membershipLock.connect(owner).revokeRole(operatorRole, user.address)
+    ).to.emit(membershipLock, "RoleRevoked")
+     .withArgs(operatorRole, user.address);
+});
+
     //ABAC tests
     it("ABAC: should allow access when all conditions are met", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");
@@ -210,6 +261,18 @@ describe("MembershipLock", function(){
 
     expect(await membershipLock.canAccessByABAC(user.address)).to.equal(false);
 });
+
+    it("ABAC: should allow access when risk score equals max", async function () {
+        const membershipLock = await ethers.deployContract("MembershipLock");
+        const [owner, user] = await ethers.getSigners();
+
+        const duration = 60 * 60;
+
+        await membershipLock.connect(owner).grantMembership(user.address, duration);
+        await membershipLock.connect(owner).setUserAttributes(user.address, 2, 50, false);
+
+        expect(await membershipLock.canAccessByABAC(user.address)).to.equal(true);
+    });
 
     it("ABAC: should deny access when risk score is too high", async function () {
     const membershipLock = await ethers.deployContract("MembershipLock");
@@ -281,6 +344,18 @@ describe("MembershipLock", function(){
         membershipLock.connect(owner).setUserAttributes(user.address, 2, 101, false)
     ).to.be.revertedWith("Invalid risk score");
 });
+
+    //ABAC event test
+    it("ABAC: should emit UserAttributesUpdated when owner sets attributes", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    await expect(
+        membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, false)
+    ).to.emit(membershipLock, "UserAttributesUpdated")
+     .withArgs(user.address, 2, 30, false);
+});
+
 
     //同一个用户，在三种访问控制模型下，可以得到不同结果
     it("Access decision: should return ACL, RBAC, and ABAC results", async function () {
@@ -366,7 +441,7 @@ describe("MembershipLock", function(){
         const duration = 60 *60;
         await expect(
             membershipLock.connect(user).grantMembership(user.address, duration)
-        ).to.be.revertedWith("Only owner can grant");
+        ).to.be.revertedWith("Only owner");
         
     });
 
