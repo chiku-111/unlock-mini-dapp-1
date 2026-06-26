@@ -282,6 +282,27 @@ describe("MembershipLock", function(){
     ).to.be.revertedWith("Invalid risk score");
 });
 
+    //同一个用户，在三种访问控制模型下，可以得到不同结果
+    it("Access decision: should return ACL, RBAC, and ABAC results", async function () {
+    const membershipLock = await ethers.deployContract("MembershipLock");
+    const [owner, user] = await ethers.getSigners();
+
+    const duration = 60 * 60;
+
+    await membershipLock.connect(owner).addToAcl(user.address);
+
+    await membershipLock.connect(owner).grantMembership(user.address, duration);
+    await membershipLock.connect(owner).setUserAttributes(user.address, 2, 30, false);
+
+    const [aclAllowed, rbacAllowed, abacAllowed] =
+        await membershipLock.getAccessDecision(user.address);
+
+    expect(aclAllowed).to.equal(true);
+    //user 没有 OPERATOR_ROLE
+    expect(rbacAllowed).to.equal(false);
+    expect(abacAllowed).to.equal(true);
+});
+
     //owner 可以给用户授予会员, membershipExpiresAt[user] = block.timestamp + duration;
     it("owner can grant membership", async function () {
         const membershipLock = await ethers.deployContract("MembershipLock");

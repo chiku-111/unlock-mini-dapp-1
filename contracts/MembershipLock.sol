@@ -125,6 +125,20 @@ contract MembershipLock{
         return hasRole(OPERATOR_ROLE, user);
     }
 
+    //获取访问判断结果
+    function getAccessDecision(address user) external view 
+    returns (
+            bool aclAllowed,
+            bool rbacAllowed,
+            bool abacAllowed
+        )
+    {
+        return (
+            canAccessByACL(user),
+            canAccessByRBAC(user),
+            canAccessByABAC(user)
+        );
+    }
 
 
     //给某个用户授予会员资格
