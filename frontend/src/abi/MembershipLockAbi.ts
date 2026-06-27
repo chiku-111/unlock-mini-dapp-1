@@ -18,6 +18,33 @@ export const MEMBERSHIP_LOCK_ABI = [
             },
         ],
     },
+
+    {
+    type: "function",
+    name: "getAccessDecision",
+    stateMutability: "view",
+    inputs: [
+        {
+            name: "user",
+            type: "address",
+        },
+    ],
+    outputs: [
+        {
+            name: "aclAllowed",
+            type: "bool",
+        },
+        {
+            name: "rbacAllowed",
+            type: "bool",
+        },
+        {
+            name: "abacAllowed",
+            type: "bool",
+        },
+    ],
+},
+
     {
         type:"function",
         name:"price",

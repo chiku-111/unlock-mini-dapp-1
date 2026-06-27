@@ -70,6 +70,11 @@ declare global {
 
 function App() {
 const [accessState, setAccessState] = useState<AccessState>("locked");
+const [aclAllowed, setAclAllowed] = useState<boolean | null>(null);
+const [rbacAllowed, setRbacAllowed] = useState<boolean | null>(null);
+const [abacAllowed, setAbacAllowed] = useState<boolean | null>(null);
+//保存“当前是否正在读取访问控制结果”
+const [isCheckingAccessDecision, setIsCheckingAccessDecision] = useState(false);
 //保存从合约 price() 读取到的会员价格, 初始值为空字符串表示还没有加载
 const [membershipPrice, setMembershipPrice] = useState<string>("");
 const [walletAddress, setWalletAddress]= useState<Address | null>(null);
@@ -350,6 +355,52 @@ if (membershipLockAddress === null || publicClient === null) {
     }
 }
 
+  //读取ACL/RBAC/ABAC access result
+  async function handleLoadAccessDecision() {
+  setMembershipError(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    setAclAllowed(null);
+    setRbacAllowed(null);
+    setAbacAllowed(null);
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null) {
+    setMembershipError("Unsupported network");
+    setAclAllowed(null);
+    setRbacAllowed(null);
+    setAbacAllowed(null);
+    return;
+  }
+
+  setIsCheckingAccessDecision(true);
+
+  try {
+    const client = publicClient as any;
+
+    const [aclResult, rbacResult, abacResult] = (await client.readContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "getAccessDecision",
+      args: [walletAddress],
+    })) as readonly [boolean, boolean, boolean];
+
+    setAclAllowed(aclResult);
+    setRbacAllowed(rbacResult);
+    setAbacAllowed(abacResult);
+  } catch (error) {
+    console.error("Failed to read access decision:", error);
+    setMembershipError("Failed to read access decision");
+    setAclAllowed(null);
+    setRbacAllowed(null);
+    setAbacAllowed(null);
+  } finally {
+    setIsCheckingAccessDecision(false);
+  }
+}
+
     async function handlePurchaseMembership() {
       setMembershipError(null);
       if(window.ethereum === undefined){
@@ -484,6 +535,7 @@ if (membershipLockAddress === null || publicClient === null) {
     contractOwnerAddress !== null &&
     walletAddress.toLowerCase() === contractOwnerAddress.toLowerCase();
 
+
   //加入监听, 给 useEffect 一个函数, React 会在合适的时候执行
   useEffect(() =>{
     //如果没有 MetaMask, 就直接结束
@@ -600,6 +652,34 @@ useEffect(() => {
   void handleCheckMembership();
 }, [walletAddress, membershipLockAddress, publicClient]);
 
+//当钱包地址、合约地址或读链工具变化时，自动读取 ACL/RBAC/ABAC 访问结果
+useEffect(() => {
+  if (walletAddress === null) {
+    setAclAllowed(null);
+    setRbacAllowed(null);
+    setAbacAllowed(null);
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null) {
+    setAclAllowed(null);
+    setRbacAllowed(null);
+    setAbacAllowed(null);
+    return;
+  }
+
+  void handleLoadAccessDecision();
+}, [walletAddress, membershipLockAddress, publicClient]);
+
+//访问控制结果显示格式化函数
+function formatAccessResult(value: boolean | null) {
+  if (value === null) {
+    return "not loaded";
+  }
+
+  return value ? "Allowed" : "Denied";
+}
+
 
 //JSX
   return (
@@ -642,6 +722,19 @@ useEffect(() => {
       {membershipError !== null && <p>{membershipError}</p>}
 
       <p>Current status: {accessState}</p>
+
+      <p>ACL Access: {formatAccessResult(aclAllowed)}</p>
+      <p>RBAC Access: {formatAccessResult(rbacAllowed)}</p>
+      <p>ABAC Access: {formatAccessResult(abacAllowed)}</p>
+
+      {/* 手动重新读取访问控制结果 */}
+      <button
+        type="button"
+        onClick={handleLoadAccessDecision}
+        disabled={isCheckingAccessDecision}
+      >
+        {isCheckingAccessDecision ? "Checking Access..." : "Refresh Access"}
+      </button>
       
       {/*`${membershipPrice} ETH`= JavaScript模板字符串*/}
       <p>Membership price: {membershipPrice === "" ? "not loaded" : `${membershipPrice} ETH`}</p>
