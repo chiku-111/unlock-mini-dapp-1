@@ -43,7 +43,7 @@ export const MEMBERSHIP_LOCK_ABI = [
             type: "bool",
         },
     ],
-},
+    },
 
     {
         type:"function",
