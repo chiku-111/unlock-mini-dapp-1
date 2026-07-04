@@ -1,8 +1,16 @@
-﻿# Unlock Mini DApp
+# Unlock Mini DApp
 
-Unlock Mini DApp 是一个基于 Solidity、Hardhat、React、Vite 和 viem 的会员制 DApp。
+Unlock Mini DApp 是一个基于 Solidity、Hardhat、React、Vite、TypeScript、viem 和 MetaMask 的会员与访问控制演示 DApp。
 
-用户可以支付 `0.01 ETH` 购买 30 天会员；管理员可以手动授权会员，并提现合约中的 ETH。项目支持本地 Hardhat 网络和 Sepolia 测试网。
+项目最初是一个会员购买 DApp，现在已经扩展成三种访问控制模型的展示项目：
+
+```txt
+ACL   Access Control List，白名单访问控制
+RBAC  Role-Based Access Control，角色访问控制
+ABAC  Attribute-Based Access Control，属性访问控制
+```
+
+用户可以支付 `0.01 ETH` 购买 30 天会员。合约 owner 可以在前端管理区为目标用户授权会员、白名单、角色和属性。
 
 ## 功能
 
@@ -12,27 +20,151 @@ Unlock Mini DApp 是一个基于 Solidity、Hardhat、React、Vite 和 viem 的�
 读取会员价格
 读取会员状态和到期时间
 购买 / 续费会员
-读取 owner
-判断当前钱包是否 owner
-读取合约余额
-owner 提现
-监听账号切换 accountsChanged
-监听网络切换 chainChanged
+owner 手动授权会员
+owner 提现合约 ETH
+ACL 白名单管理
+RBAC OPERATOR_ROLE 授权 / 撤销
+ABAC 用户属性管理
+当前钱包访问结果展示
+目标用户访问结果展示
 Sepolia 交易 hash 跳转 Etherscan
 ```
 
-## 技术栈
+## 访问控制模型
+
+### ACL
+
+ACL 使用直接白名单：
 
 ```txt
-Solidity 0.8.28
-Hardhat 3
-ethers v6
-React
-Vite
-TypeScript
-viem
-MetaMask
-Sepolia
+aclAllowlist[user] == true
+```
+
+相关函数：
+
+```txt
+addToAcl(address user)
+removeFromAcl(address user)
+canAccessByACL(address user)
+```
+
+### RBAC
+
+RBAC 使用角色。本项目定义了：
+
+```txt
+OPERATOR_ROLE = keccak256("OPERATOR_ROLE")
+```
+
+相关函数：
+
+```txt
+grantRole(bytes32 role, address user)
+revokeRole(bytes32 role, address user)
+hasRole(bytes32 role, address user)
+canAccessByRBAC(address user)
+```
+
+### ABAC
+
+ABAC 使用用户属性和会员状态共同判断。
+
+当前 ABAC 规则是：
+
+```txt
+hasValidMembership(user)
+&& userAttributes[user].kycLevel >= 2
+&& userAttributes[user].riskScore <= 50
+&& userAttributes[user].banned == false
+```
+
+相关函数：
+
+```txt
+setUserAttributes(address user, uint8 kycLevel, uint8 riskScore, bool banned)
+```
+
+## 当前钱包和目标用户的区别
+
+前端展示两组访问结果。
+
+当前钱包：
+
+```txt
+ACL Access
+RBAC Access
+ABAC Access
+```
+
+目标用户：
+
+```txt
+Target ACL Access
+Target RBAC Access
+Target ABAC Access
+```
+
+`walletAddress` 是当前连接的钱包地址，也就是负责签名和发交易的操作者。
+
+`targetAddress` 是 owner 管理区输入的目标用户地址，也就是被授权或被撤销权限的用户。
+
+本项目演示 ACL/RBAC/ABAC 授权流程时，主要看 `Target ... Access` 这一组结果。
+
+## 合约
+
+主合约：
+
+```txt
+contracts/MembershipLock.sol
+```
+
+主要函数和公开状态：
+
+```txt
+owner()
+price()
+membershipExpiresAt(address)
+purchaseMembership()
+grantMembership(address user, uint256 duration)
+hasValidMembership(address user)
+aclAllowlist(address)
+addToAcl(address user)
+removeFromAcl(address user)
+canAccessByACL(address user)
+OPERATOR_ROLE()
+grantRole(bytes32 role, address user)
+revokeRole(bytes32 role, address user)
+hasRole(bytes32 role, address user)
+canAccessByRBAC(address user)
+userAttributes(address)
+setUserAttributes(address user, uint8 kycLevel, uint8 riskScore, bool banned)
+canAccessByABAC(address user)
+getAccessDecision(address user)
+withdraw(address payable recipient)
+```
+
+## 前端 owner 管理区
+
+owner 管理区支持：
+
+```txt
+targetAddress 输入
+Target ACL/RBAC/ABAC Access 显示
+Add to ACL
+Remove from ACL
+Grant OPERATOR_ROLE
+Revoke OPERATOR_ROLE
+Grant Membership
+Set ABAC
+Refresh Target Access
+```
+
+推荐 ABAC 演示参数：
+
+```txt
+KYC level = 2
+Risk score = 30
+Banned 不勾选
 ```
 
 ## 项目结构
@@ -47,32 +179,7 @@ frontend/src/abi/MembershipLockAbi.ts     前端 ABI
 frontend/src/deployments/                 多网络合约地址
 ```
 
-`Counter.sol`、`Counter.t.sol`、`MiniMembership.sol` 等学习/模板文件已保留在 `docs/learning/` 中，它们不是当前主线合约。
-
-## 合约功能
-
-主合约：`contracts/MembershipLock.sol`
-
-```txt
-owner
-price = 0.01 ether
-membershipExpiresAt(address)
-grantMembership(address user, uint256 duration)
-purchaseMembership()
-hasValidMembership(address user)
-withdraw(address payable recipient)
-```
-
-核心规则：
-
-```txt
-用户支付 0.01 ETH 购买 30 天会员
-有效会员续费会从原到期时间继续累加
-owner 可以手动授权会员
-owner 可以提现合约余额
-grantMembership 会检查零地址和 0 秒时长
-withdraw 会检查零地址和合约余额
-```
+`docs/learning/` 下保留的是学习和模板文件，不属于当前主线合约流程。
 
 ## 支持网络
 
@@ -81,7 +188,7 @@ withdraw 会检查零地址和合约余额
 11155111   Sepolia
 ```
 
-Sepolia 合约地址：
+当前 Sepolia 合约地址：
 
 ```txt
 0xE55b07A3D404509b7DEa9FC195E40f4F2FeAB370
@@ -95,8 +202,6 @@ frontend/src/deployments/11155111.json
 frontend/src/deployments/index.ts
 ```
 
-前端会根据 MetaMask 当前 `chainId` 自动选择对应的合约地址。
-
 ## 本地运行
 
 安装依赖：
@@ -107,15 +212,17 @@ cd frontend
 npm install
 ```
 
-启动本地 Hardhat 节点：
+启动本地区块链：
 
 ```powershell
+cd D:\unlock-mini-dapp
 npx.cmd hardhat node
 ```
 
 部署本地合约：
 
 ```powershell
+cd D:\unlock-mini-dapp
 $env:DEPLOY_NETWORK="localhost"
 npx.cmd hardhat run scripts/deploy-membership-lock.ts
 ```
@@ -123,14 +230,46 @@ npx.cmd hardhat run scripts/deploy-membership-lock.ts
 启动前端：
 
 ```powershell
-cd frontend
+cd D:\unlock-mini-dapp\frontend
 npm.cmd run dev
 ```
 
-打开：
+浏览器打开：
 
 ```txt
 http://localhost:5173
+```
+
+## 本地演示流程
+
+MetaMask 设置：
+
+```txt
+网络：Localhost 31337
+owner 钱包：Hardhat Account #0
+targetAddress：Hardhat Account #1
+```
+
+操作顺序：
+
+```txt
+1. owner 钱包连接页面
+2. Target address 填普通用户地址
+3. Refresh Target Access
+4. Add to ACL
+5. Grant OPERATOR_ROLE
+6. Grant Membership
+7. Set ABAC，KYC level = 2，Risk score = 30，Banned 不勾选
+8. Refresh Target Access
+9. 确认 Target ACL/RBAC/ABAC Access 都显示 Allowed
+```
+
+预期结果：
+
+```txt
+Target ACL Access: Allowed
+Target RBAC Access: Allowed
+Target ABAC Access: Allowed
 ```
 
 ## Sepolia 部署
@@ -161,9 +300,9 @@ npx.cmd hardhat run scripts/deploy-membership-lock.ts
 VITE_SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY
 ```
 
-注意：不要把私钥写入前端 `.env.local`。
+不要把私钥写入前端环境文件。
 
-## 测试
+## 构建和测试
 
 合约测试：
 
@@ -178,29 +317,11 @@ cd frontend
 npm.cmd run build
 ```
 
-## 使用方式
+最近一次已知本地结果：
 
 ```txt
-1. 连接 MetaMask
-2. 切换到 Hardhat 或 Sepolia
-3. 查看会员价格、状态和到期时间
-4. 点击 Purchase Membership 购买 / 续费会员
-5. owner 可以点击 Withdraw 提现合约余额
-6. Sepolia 交易可通过 Etherscan 链接查看
-```
-
-## 当前状态
-
-```txt
-合约主线完成
-合约测试完成
-前端购买会员完成
-owner 后台提现完成
-本地 Hardhat 支持完成
-Sepolia 部署完成
-多网络 deployment 支持完成
-Etherscan 交易链接完成
-README 中文说明已整理
+npx.cmd hardhat test
+53 passing
 ```
 
 ## 安全提醒

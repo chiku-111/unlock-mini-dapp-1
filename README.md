@@ -1,40 +1,172 @@
-# Unlock Mini DApp 
+# Unlock Mini DApp
 
 [中文说明](./README_zh.md)
 
-Unlock Mini DApp is a membership-based DApp built with Solidity, Hardhat, React, Vite, and viem.
+Unlock Mini DApp is a membership and access-control demo built with Solidity, Hardhat, React, Vite, TypeScript, viem, and MetaMask.
 
-Users can pay `0.01 ETH` to purchase a 30-day membership. The owner can manually grant memberships and withdraw ETH from the contract. The project supports both the local Hardhat network and the Sepolia testnet.
+The project started as a simple membership purchase DApp and now demonstrates three access-control models:
+
+```txt
+ACL   Access Control List
+RBAC  Role-Based Access Control
+ABAC  Attribute-Based Access Control
+```
+
+Users can pay `0.01 ETH` to purchase a 30-day membership. The contract owner can also manage access for a target user from the frontend owner panel.
 
 ## Features
 
 ```txt
 Connect MetaMask
-Automatically select the contract address by chainId
+Automatically select contract address by chainId
 Read membership price
 Read membership status and expiration time
 Purchase / renew membership
-Read owner
-Check whether the current wallet is owner
-Read contract balance
-Owner withdrawal
-Listen to accountsChanged
-Listen to chainChanged
-Link Sepolia transaction hashes to Etherscan
+Owner grants membership manually
+Owner withdraws contract ETH
+ACL allowlist management
+RBAC OPERATOR_ROLE grant / revoke
+ABAC user attribute management
+Current wallet access result display
+Target user access result display
+Sepolia Etherscan transaction links
 ```
 
-## Tech Stack
+## Access Models
+
+### ACL
+
+ACL uses a direct allowlist:
 
 ```txt
-Solidity 0.8.28
-Hardhat 3
-ethers v6
-React
-Vite
-TypeScript
-viem
-MetaMask
-Sepolia
+aclAllowlist[user] == true
+```
+
+Owner functions:
+
+```txt
+addToAcl(address user)
+removeFromAcl(address user)
+canAccessByACL(address user)
+```
+
+### RBAC
+
+RBAC uses roles. This project defines:
+
+```txt
+OPERATOR_ROLE = keccak256("OPERATOR_ROLE")
+```
+
+Owner functions:
+
+```txt
+grantRole(bytes32 role, address user)
+revokeRole(bytes32 role, address user)
+hasRole(bytes32 role, address user)
+canAccessByRBAC(address user)
+```
+
+### ABAC
+
+ABAC uses user attributes plus membership status.
+
+The current ABAC rule is:
+
+```txt
+hasValidMembership(user)
+&& userAttributes[user].kycLevel >= 2
+&& userAttributes[user].riskScore <= 50
+&& userAttributes[user].banned == false
+```
+
+Owner function:
+
+```txt
+setUserAttributes(address user, uint8 kycLevel, uint8 riskScore, bool banned)
+```
+
+## Wallet vs Target User
+
+The frontend shows two groups of access results.
+
+Current wallet:
+
+```txt
+ACL Access
+RBAC Access
+ABAC Access
+```
+
+Target user:
+
+```txt
+Target ACL Access
+Target RBAC Access
+Target ABAC Access
+```
+
+`walletAddress` is the currently connected wallet. It signs transactions and pays gas.
+
+`targetAddress` is the user address entered in the owner management panel. It is the user being granted or revoked access.
+
+For the ACL/RBAC/ABAC owner demo, the main result to watch is the `Target ... Access` group.
+
+## Contract
+
+Main contract:
+
+```txt
+contracts/MembershipLock.sol
+```
+
+Main functions and public state:
+
+```txt
+owner()
+price()
+membershipExpiresAt(address)
+purchaseMembership()
+grantMembership(address user, uint256 duration)
+hasValidMembership(address user)
+aclAllowlist(address)
+addToAcl(address user)
+removeFromAcl(address user)
+canAccessByACL(address user)
+OPERATOR_ROLE()
+grantRole(bytes32 role, address user)
+revokeRole(bytes32 role, address user)
+hasRole(bytes32 role, address user)
+canAccessByRBAC(address user)
+userAttributes(address)
+setUserAttributes(address user, uint8 kycLevel, uint8 riskScore, bool banned)
+canAccessByABAC(address user)
+getAccessDecision(address user)
+withdraw(address payable recipient)
+```
+
+## Frontend Owner Panel
+
+The owner management panel supports:
+
+```txt
+Target address input
+Target ACL/RBAC/ABAC Access display
+Add to ACL
+Remove from ACL
+Grant OPERATOR_ROLE
+Revoke OPERATOR_ROLE
+Grant Membership
+Set ABAC
+Refresh Target Access
+```
+
+Recommended ABAC demo values:
+
+```txt
+KYC level = 2
+Risk score = 30
+Banned = unchecked
 ```
 
 ## Project Structure
@@ -49,32 +181,7 @@ frontend/src/abi/MembershipLockAbi.ts     Frontend ABI
 frontend/src/deployments/                 Multi-network contract addresses
 ```
 
-Learning/template files such as `Counter.sol`, `Counter.t.sol`, and `MiniMembership.sol` are kept under `docs/learning/`. They are not part of the current main contract flow.
-
-## Contract Features
-
-Main contract: `contracts/MembershipLock.sol`
-
-```txt
-owner
-price = 0.01 ether
-membershipExpiresAt(address)
-grantMembership(address user, uint256 duration)
-purchaseMembership()
-hasValidMembership(address user)
-withdraw(address payable recipient)
-```
-
-Core rules:
-
-```txt
-Users pay 0.01 ETH to purchase a 30-day membership
-Active membership renewals continue from the current expiration time
-owner can manually grant memberships
-owner can withdraw the contract balance
-grantMembership checks zero address and zero duration
-withdraw checks zero address and contract balance
-```
+Learning/template files are kept under `docs/learning/`. They are not part of the current main contract flow.
 
 ## Supported Networks
 
@@ -83,21 +190,19 @@ withdraw checks zero address and contract balance
 11155111   Sepolia
 ```
 
-Sepolia contract address:
+Current Sepolia contract address:
 
 ```txt
 0xE55b07A3D404509b7DEa9FC195E40f4F2FeAB370
 ```
 
-Deployment information is stored in:
+Deployment files:
 
 ```txt
 frontend/src/deployments/31337.json
 frontend/src/deployments/11155111.json
 frontend/src/deployments/index.ts
 ```
-
-The frontend automatically selects the corresponding contract address based on the current MetaMask `chainId`.
 
 ## Local Development
 
@@ -112,12 +217,14 @@ npm install
 Start the local Hardhat node:
 
 ```powershell
+cd D:\unlock-mini-dapp
 npx.cmd hardhat node
 ```
 
 Deploy the local contract:
 
 ```powershell
+cd D:\unlock-mini-dapp
 $env:DEPLOY_NETWORK="localhost"
 npx.cmd hardhat run scripts/deploy-membership-lock.ts
 ```
@@ -125,7 +232,7 @@ npx.cmd hardhat run scripts/deploy-membership-lock.ts
 Start the frontend:
 
 ```powershell
-cd frontend
+cd D:\unlock-mini-dapp\frontend
 npm.cmd run dev
 ```
 
@@ -135,16 +242,48 @@ Open:
 http://localhost:5173
 ```
 
+## Local Demo Flow
+
+MetaMask setup:
+
+```txt
+Network: Localhost 31337
+Owner wallet: Hardhat Account #0
+Target address: Hardhat Account #1
+```
+
+Demo steps:
+
+```txt
+1. Connect the owner wallet
+2. Enter the target user address
+3. Click Refresh Target Access
+4. Click Add to ACL
+5. Click Grant OPERATOR_ROLE
+6. Click Grant Membership
+7. Set ABAC with KYC level 2, risk score 30, banned unchecked
+8. Click Refresh Target Access
+9. Confirm Target ACL/RBAC/ABAC Access all show Allowed
+```
+
+Expected result:
+
+```txt
+Target ACL Access: Allowed
+Target RBAC Access: Allowed
+Target ABAC Access: Allowed
+```
+
 ## Sepolia Deployment
 
-Use Hardhat Keystore to store the Sepolia configuration:
+Use Hardhat Keystore to store Sepolia configuration:
 
 ```powershell
 npx.cmd hardhat keystore set SEPOLIA_RPC_URL
 npx.cmd hardhat keystore set SEPOLIA_PRIVATE_KEY
 ```
 
-Check the Sepolia connection:
+Check Sepolia connection:
 
 ```powershell
 npx.cmd hardhat run scripts/check-sepolia.ts
@@ -157,15 +296,15 @@ $env:DEPLOY_NETWORK="sepolia"
 npx.cmd hardhat run scripts/deploy-membership-lock.ts
 ```
 
-To let the frontend read from Sepolia, configure `frontend/.env.local`:
+Configure the frontend Sepolia RPC URL in `frontend/.env.local`:
 
 ```env
 VITE_SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY
 ```
 
-Do not put private keys in the frontend `.env.local` file.
+Do not put private keys in frontend environment files.
 
-## Tests
+## Build and Test
 
 Contract tests:
 
@@ -180,29 +319,11 @@ cd frontend
 npm.cmd run build
 ```
 
-## Usage
+Latest known local result:
 
 ```txt
-1. Connect MetaMask
-2. Switch to Hardhat or Sepolia
-3. View membership price, status, and expiration time
-4. Click Purchase Membership to purchase / renew membership
-5. owner can click Withdraw to withdraw the contract balance
-6. Sepolia transactions can be viewed through Etherscan links
-```
-
-## Current Status
-
-```txt
-Main contract flow completed
-Contract tests completed
-Frontend membership purchase completed
-Owner withdrawal panel completed
-Local Hardhat support completed
-Sepolia deployment completed
-Multi-network deployment support completed
-Etherscan transaction links completed
-Chinese README documentation organized
+npx.cmd hardhat test
+53 passing
 ```
 
 ## Security Notes
@@ -213,4 +334,3 @@ Do not commit seed phrases
 Do not put SEPOLIA_PRIVATE_KEY in the frontend
 Do not commit .env or .env.local
 ```
-

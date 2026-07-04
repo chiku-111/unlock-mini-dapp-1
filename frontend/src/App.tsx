@@ -21,6 +21,14 @@ import { getDeploymentByChainId } from "./deployments";
 
 type AccessState = "locked" | "unlocked";
 
+//owner 操作状态
+type OwnerActionStatus =
+  | "idle"
+  | "waitingWallet"
+  | "pending"
+  | "confirmed"
+  | "failed";
+
 //idle: 空闲还没开始购买 or 等钱包确认 or 交易已发送,正等链上确认 
 type PurchaseStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
 
@@ -73,6 +81,22 @@ const [accessState, setAccessState] = useState<AccessState>("locked");
 const [aclAllowed, setAclAllowed] = useState<boolean | null>(null);
 const [rbacAllowed, setRbacAllowed] = useState<boolean | null>(null);
 const [abacAllowed, setAbacAllowed] = useState<boolean | null>(null);
+
+const [targetAclAllowed, setTargetAclAllowed] = useState<boolean | null>(null);
+const [targetRbacAllowed, setTargetRbacAllowed] = useState<boolean | null>(null);
+const [targetAbacAllowed, setTargetAbacAllowed] = useState<boolean | null>(null);
+//保存是否正在读取 targetAddress 的访问结果
+const [isCheckingTargetAccessDecision, setIsCheckingTargetAccessDecision] = useState(false);
+
+//owner 想管理哪个用户
+const [targetAddress, setTargetAddress] = useState("");
+const [kycLevelInput, setKycLevelInput] = useState("2");
+const [riskScoreInput, setRiskScoreInput] = useState("30");
+const [bannedInput, setBannedInput] = useState(false);
+const [ownerActionStatus, setOwnerActionStatus] =
+  useState<OwnerActionStatus>("idle");
+const [ownerActionTxHash, setOwnerActionTxHash] = useState<string | null>(null);
+
 //保存“当前是否正在读取访问控制结果”
 const [isCheckingAccessDecision, setIsCheckingAccessDecision] = useState(false);
 //保存从合约 price() 读取到的会员价格, 初始值为空字符串表示还没有加载
@@ -401,6 +425,456 @@ if (membershipLockAddress === null || publicClient === null) {
   }
 }
 
+//targetAddress 的访问结果
+async function handleLoadTargetAccessDecision() {
+  setMembershipError(null);
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    setTargetAclAllowed(null);
+    setTargetRbacAllowed(null);
+    setTargetAbacAllowed(null);
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null) {
+    setMembershipError("Unsupported network");
+    setTargetAclAllowed(null);
+    setTargetRbacAllowed(null);
+    setTargetAbacAllowed(null);
+    return;
+  }
+
+  setIsCheckingTargetAccessDecision(true);
+
+  try {
+    const client = publicClient as any;
+
+    const [aclResult, rbacResult, abacResult] = (await client.readContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "getAccessDecision",
+      args: [targetAddress.trim() as Address],
+    })) as readonly [boolean, boolean, boolean];
+
+    setTargetAclAllowed(aclResult);
+    setTargetRbacAllowed(rbacResult);
+    setTargetAbacAllowed(abacResult);
+  } catch (error) {
+    console.error("Failed to read target access decision:", error);
+    setMembershipError("Failed to read target access decision");
+    setTargetAclAllowed(null);
+    setTargetRbacAllowed(null);
+    setTargetAbacAllowed(null);
+  } finally {
+    setIsCheckingTargetAccessDecision(false);
+  }
+}
+
+//把 targetAddress 加入 ACL 白名单
+async function handleAddToAcl() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  //trim() 会去掉前后空格
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "addToAcl",
+      args: [targetAddress.trim() as Address],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+  } catch (error) {
+    console.error("Failed to add to ACL:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to add to ACL");
+  }
+}
+
+//把 targetAddress 从 ACL 白名单移除
+async function handleRemoveFromAcl() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "removeFromAcl",
+      args: [targetAddress.trim() as Address],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+  } catch (error) {
+    console.error("Failed to remove from ACL:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to remove from ACL");
+  }
+}
+
+async function handleGrantOperatorRole() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const client = publicClient as any;
+
+    const operatorRole = (await client.readContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "OPERATOR_ROLE",
+      args: [],
+    })) as `0x${string}`;
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "grantRole",
+      args: [operatorRole, targetAddress.trim() as Address],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+  } catch (error) {
+    console.error("Failed to grant OPERATOR_ROLE:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to grant OPERATOR_ROLE");
+  }
+}
+
+async function handleRevokeOperatorRole() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const client = publicClient as any;
+
+    const operatorRole = (await client.readContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "OPERATOR_ROLE",
+      args: [],
+    })) as `0x${string}`;
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "revokeRole",
+      args: [operatorRole, targetAddress.trim() as Address],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+  } catch (error) {
+    console.error("Failed to revoke OPERATOR_ROLE:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to revoke OPERATOR_ROLE");
+  }
+}
+
+async function handleGrantMembership() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const duration = 30n * 24n * 60n * 60n;
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "grantMembership",
+      args: [targetAddress.trim() as Address, duration],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+    await handleCheckMembership();
+  } catch (error) {
+    console.error("Failed to grant membership:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to grant membership");
+  }
+}
+
+async function handleSetAbacAttributes() {
+  setMembershipError(null);
+  setOwnerActionTxHash(null);
+
+  if (walletAddress === null) {
+    setMembershipError("Please connect wallet first");
+    return;
+  }
+
+  if (membershipLockAddress === null || publicClient === null || currentChain === null) {
+    setMembershipError("Unsupported network");
+    return;
+  }
+
+  if (!isCurrentWalletOwner) {
+    setMembershipError("Only owner can manage access");
+    return;
+  }
+
+  if (targetAddress.trim() === "") {
+    setMembershipError("Please enter target address");
+    return;
+  }
+
+  //数字转换, 字符串转数字
+  const kycLevel = Number(kycLevelInput);
+  const riskScore = Number(riskScoreInput);
+
+  if (!Number.isInteger(kycLevel) || kycLevel < 0 || kycLevel > 255) {
+    setMembershipError("KYC level must be an integer from 0 to 255");
+    return;
+  }
+
+  if (!Number.isInteger(riskScore) || riskScore < 0 || riskScore > 100) {
+    setMembershipError("Risk score must be an integer from 0 to 100");
+    return;
+  }
+
+  try {
+    setOwnerActionStatus("waitingWallet");
+
+    if (window.ethereum === undefined) {
+      setMembershipError("MetaMask is not installed");
+      return;
+    }
+
+    const walletClient = createWalletClient({
+      chain: currentChain,
+      transport: custom(window.ethereum),
+    });
+
+    const hash = await walletClient.writeContract({
+      address: membershipLockAddress,
+      abi: MEMBERSHIP_LOCK_ABI,
+      functionName: "setUserAttributes",
+      args: [targetAddress.trim() as Address, kycLevel, riskScore, bannedInput],
+      account: walletAddress,
+      chain: currentChain,
+    });
+
+    setOwnerActionTxHash(hash);
+    setOwnerActionStatus("pending");
+
+    await publicClient.waitForTransactionReceipt({ hash });
+
+    setOwnerActionStatus("confirmed");
+    await handleLoadAccessDecision();
+    await handleLoadTargetAccessDecision();
+  } catch (error) {
+    console.error("Failed to set ABAC attributes:", error);
+    setOwnerActionStatus("failed");
+    setMembershipError("Failed to set ABAC attributes");
+  }
+}
+
     async function handlePurchaseMembership() {
       setMembershipError(null);
       if(window.ethereum === undefined){
@@ -462,7 +936,6 @@ if (membershipLockAddress === null || publicClient === null) {
         setMembershipError("Failed to purchase membership");
       }
     }
-
 
 
     async function handleWithdraw() {
@@ -709,6 +1182,92 @@ function formatAccessResult(value: boolean | null) {
           ? "yes"
           : "no"}
       </p>
+
+    {isCurrentWalletOwner && (
+  <section>
+    <h2>Owner Management</h2>
+
+    <label>
+      Target address
+      <input
+        type="text"
+        value={targetAddress}
+        onChange={(event) => setTargetAddress(event.target.value)}
+        placeholder="0x..."
+      />
+    </label>
+
+    <p>Target ACL Access: {formatAccessResult(targetAclAllowed)}</p>
+    <p>Target RBAC Access: {formatAccessResult(targetRbacAllowed)}</p>
+    <p>Target ABAC Access: {formatAccessResult(targetAbacAllowed)}</p>
+
+    {/* Refresh targetAddress access decision manually. */}
+    <button
+      type="button"
+      onClick={handleLoadTargetAccessDecision}
+      disabled={isCheckingTargetAccessDecision}
+    >
+      {isCheckingTargetAccessDecision ? "Checking Target..." : "Refresh Target Access"}
+    </button>
+
+    <label>
+      KYC level
+      <input
+        type="number"
+        value={kycLevelInput}
+        onChange={(event) => setKycLevelInput(event.target.value)}
+      />
+    </label>
+
+    <label>
+      Risk score
+      <input
+        type="number"
+        value={riskScoreInput}
+        onChange={(event) => setRiskScoreInput(event.target.value)}
+      />
+    </label>
+
+    <label>
+      Banned
+      <input
+        type="checkbox"
+        checked={bannedInput}
+        onChange={(event) => setBannedInput(event.target.checked)}
+      />
+    </label>
+
+  <div>
+  <button type="button" onClick={handleAddToAcl}>
+    Add to ACL
+  </button>
+
+  <button type="button" onClick={handleRemoveFromAcl}>
+    Remove from ACL
+  </button>
+
+  <button type="button" onClick={handleGrantOperatorRole}>
+    Grant OPERATOR_ROLE
+  </button>
+
+  <button type="button" onClick={handleRevokeOperatorRole}>
+    Revoke OPERATOR_ROLE
+  </button>
+
+    <button type="button" onClick={handleGrantMembership}>
+      Grant Membership
+    </button>
+
+  <button type="button" onClick={handleSetAbacAttributes}>
+    Set ABAC
+  </button>
+  </div>
+
+    <p>Owner action status: {ownerActionStatus}</p>
+    <p>Owner action tx: {ownerActionTxHash ?? "none"}</p>
+  </section>
+
+)}
 
       <p>
         Contract balance:{""}
