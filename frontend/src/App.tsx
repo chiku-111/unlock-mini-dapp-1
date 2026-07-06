@@ -1,27 +1,28 @@
-//useState状态变化 locked/unlocked
+// useState 用来保存页面状态，例如 locked / unlocked。
 import { useState, useEffect , useMemo } from 'react'
+import "./App.css";
 
 import { 
   createPublicClient,
   createWalletClient,
   custom,
   http, 
- // parseEther,   //ETH 转成 wei
-  formatEther,  //把链上 wei 转成人类可读 ETH 字符串
+  // parseEther 可以把 ETH 字符串转换成 wei；这里暂时没有使用。
+  formatEther,  // 把链上的 wei 转换成人类可读的 ETH 字符串。
   type Address, 
 } from 'viem';
 
 import { hardhat, sepolia } from "viem/chains";
 
-// 引入 MembershipLock 合约的 ABI
+// 引入 MembershipLock 合约 ABI。
 import { MEMBERSHIP_LOCK_ABI } from "./abi/MembershipLockAbi";
 
-// 根据 chainId 找 deployment
+// 根据 chainId 读取对应网络的 deployment。
 import { getDeploymentByChainId } from "./deployments";
 
 type AccessState = "locked" | "unlocked";
 
-//owner 操作状态
+// owner 专用操作状态。
 type OwnerActionStatus =
   | "idle"
   | "waitingWallet"
@@ -29,42 +30,42 @@ type OwnerActionStatus =
   | "confirmed"
   | "failed";
 
-//idle: 空闲还没开始购买 or 等钱包确认 or 交易已发送,正等链上确认 
+// 购买流程状态：空闲、等待钱包确认、交易待确认、已确认、失败。
 type PurchaseStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
 
-//提现状态类型
+// 提现流程状态。
 type WithdrawStatus = "idle" | "waitingWallet" | "pending" | "confirmed" | "failed";
 
-// EthereumProvider = MetaMask 注入的 ethereum 对象起的类型名字
+// EthereumProvider 描述 MetaMask 注入到 window.ethereum 的对象类型。
 type EthereumProvider = {
-  //eth_requestAccounts : 请求用户授权当前网站访问钱包账户
+  // eth_requestAccounts 用来请求用户授权当前网站访问钱包账户。
   request: (args: {method: string; params?: unknown[]}) => Promise<unknown>;
-  //on: 监听, removeListener: 取消监听
+  // on 用来监听钱包事件，removeListener 用来取消监听。
   on? : (eventName: string, handler: (...args: unknown[]) => void) => void;
   removeListener? : (eventName: string, handler: (...args: unknown[]) => void) => void;
 };
 
 
 
-//扩展全局 Window 类型。告诉ts : window 上可能存在 ethereum
+// 扩展全局 Window 类型，因为 window 上可能存在 ethereum。
 declare global {
     interface Window {
 
-      //? 可能存在 可能不存在
+      // ethereum 是可选属性，因为用户可能没有安装 MetaMask。
     ethereum?: EthereumProvider;
     }
   }
 
-  // publicClient 用来读取链上公开数据，不需要钱包签名
+  // publicClient 用来读取链上公开数据，不需要钱包签名。
 
-  /*const publicClient = createPublicClient({
+  /* 旧写法：固定创建本地 publicClient，保留作学习参考。
     chain: hardhat,
 
-      // 指定 RPC 地址。
+      // Hardhat 本地 RPC 地址。
     transport: http("http://127.0.0.1:8545"),
   });*/
 
- /* const currentDeployment = getDeploymentByChainId(31337);
+ /* 旧写法：固定读取 31337 deployment，保留作学习参考。
 
   if(currentDeployment === null){
     throw new Error("Missing local deployment for chainId 31337");
@@ -73,8 +74,8 @@ declare global {
   const membershipLockAddress = currentDeployment.membershipLock as Address;*/
   
 
-// 创建一个页面状态 accessState: 初始值是 "locked"
-// setAccessState 用来修改这个状态，修改后 React 会自动刷新页面
+// 创建页面访问状态，初始值是 locked。
+// setAccessState 用来更新 accessState，状态变化后 React 会重新渲染页面。
 
 function App() {
 const [accessState, setAccessState] = useState<AccessState>("locked");
@@ -85,10 +86,10 @@ const [abacAllowed, setAbacAllowed] = useState<boolean | null>(null);
 const [targetAclAllowed, setTargetAclAllowed] = useState<boolean | null>(null);
 const [targetRbacAllowed, setTargetRbacAllowed] = useState<boolean | null>(null);
 const [targetAbacAllowed, setTargetAbacAllowed] = useState<boolean | null>(null);
-//保存是否正在读取 targetAddress 的访问结果
+// 保存是否正在读取 targetAddress 的访问结果。
 const [isCheckingTargetAccessDecision, setIsCheckingTargetAccessDecision] = useState(false);
 
-//owner 想管理哪个用户
+// owner 想管理的目标用户地址。
 const [targetAddress, setTargetAddress] = useState("");
 const [kycLevelInput, setKycLevelInput] = useState("2");
 const [riskScoreInput, setRiskScoreInput] = useState("30");
@@ -97,47 +98,47 @@ const [ownerActionStatus, setOwnerActionStatus] =
   useState<OwnerActionStatus>("idle");
 const [ownerActionTxHash, setOwnerActionTxHash] = useState<string | null>(null);
 
-//保存“当前是否正在读取访问控制结果”
+// 保存是否正在读取当前钱包的 ACL/RBAC/ABAC 访问结果。
 const [isCheckingAccessDecision, setIsCheckingAccessDecision] = useState(false);
-//保存从合约 price() 读取到的会员价格, 初始值为空字符串表示还没有加载
+// 保存从 price() 读取到的会员价格；空字符串表示尚未加载。
 const [membershipPrice, setMembershipPrice] = useState<string>("");
 const [walletAddress, setWalletAddress]= useState<Address | null>(null);
-//保存连接钱包时的错误信息。初始为null
+// 保存连接钱包时的错误信息；null 表示当前没有错误。
 const [walletError, setWalletError]= useState<string | null>(null);
 const [membershipError, setMembershipError] = useState<string | null>(null);
-//当前是否正在检查会员状态:isCheckMembership
+// 保存当前是否正在检查会员状态。
 const [isCheckMembership, setIsCheckingMembership] = useState(false);
-//保存会员到期时间的显示文字
+// 保存会员到期时间的显示文本。
 const [membershipExpiresAtText, setMembershipExpiresAtText] = useState<string>("");
-//会员价格的链上原始值
+// 保存链上的原始会员价格，单位是 wei。
 const[membershipPriceRaw,  setMembershipPriceRaw] = useState<bigint | null>(null);
-//创建购买状态,默认是 idle
+// 创建购买流程状态，默认是 idle。
 const[purchaseStatus, setPurchaseStatus] = useState<PurchaseStatus>("idle");
-//保存购买交易的 hash ,开始未交易, 空字符串。
+// 保存购买交易 hash；空字符串表示还没有交易。
 const[purchaseTxHash, setPurchaseTxHash] = useState<string>("");
-//
+// 保存合约 owner 地址。
 const [contractOwnerAddress, setContractOwnerAddress] = useState<Address | null>(null);
-//合约余额
+// 保存合约余额。
 const [contractBalance, setContractBalance] = useState<string>("");
 
 const [withdrawStatus, setWithdrawStatus] = useState<WithdrawStatus>("idle");
 
-//保存提现交易 hash; 开始无交易, 空字符串
+// 保存提现交易 hash；空字符串表示还没有交易。
 const [withdrawTxHash, setWithdrawTxHash] = useState<string>("");
 
-//当前网络ID
+// 当前网络 chainId。
 const [currentChainId, setCurrentChainId] = useState<number |null>(null);
 
-//如果知道 chainId, 就根据 chainId 查 deployment
+// 如果已经知道 chainId，就根据 chainId 查找对应 deployment。
 const currentDeployment = currentChainId === null ? null : getDeploymentByChainId(currentChainId);
 
-//如果有 deployment, 就取 membershipLock 地址
+// 如果找到 deployment，就取出 membershipLock 合约地址。
 const membershipLockAddress = currentDeployment === null ? null : (currentDeployment.membershipLock as Address);
 
-//如果已经知道 chainId, 但找不到 deployment = 不支持的网络
+// 如果已经知道 chainId，但找不到 deployment，就说明当前网络不支持。
 const isUnsupportedNetwork = currentChainId !== null && currentDeployment === null;
 
-//Etherscan 基础地址
+// Sepolia Etherscan 基础地址。
 const etherscanBaseUrl = currentChainId === 11155111 ? "https://sepolia.etherscan.io" : null;
 
 
@@ -154,7 +155,7 @@ const currentChain = useMemo(() => {
 
 }, [currentChainId]);
 
-//useMemo:如果依赖没变, 就不要重新计算
+// useMemo 用来缓存计算结果；依赖不变时不会重新计算。
 const publicClient = useMemo(() => {
   if(currentChain === null){
     return null;
@@ -167,7 +168,7 @@ const publicClient = useMemo(() => {
     });
   }
 
-  //从 Vite 环境变量中读取 Sepolia RPC URL
+  // 从 Vite 环境变量中读取 Sepolia RPC URL。
   const sepoliaRpcUrl = import.meta.env.VITE_SEPOLIA_RPC_URL;
 
   if(sepoliaRpcUrl === undefined) {
@@ -181,7 +182,7 @@ const publicClient = useMemo(() => {
 }, [currentChain, currentChainId]);
 
 
-//读取 MetaMask 当前网络 chainId
+// 读取当前 MetaMask 网络 chainId。
 async function handleLoadChainId() {
   setWalletError(null);
 
@@ -190,13 +191,13 @@ async function handleLoadChainId() {
     return;
   }
 
-  //chainIdHex: MetaMask 返回的 chainId 是十六进制字符串
+  // MetaMask 返回的 chainId 是十六进制字符串。
   try {
     const chainIdHex = await window.ethereum.request({
       method: "eth_chainId",
     }) as string;
 
-    //把十六进制字符串转换成十进制数字
+    // 把十六进制 chainId 转换成十进制数字。
     const chainId = Number.parseInt(chainIdHex, 16);
 
     setCurrentChainId(chainId);
@@ -211,14 +212,14 @@ async function handleLoadChainId() {
 }
 
 async function handleConnectWallet(){
-  //每次重新连接钱包前，先清空旧错误
+  // 每次重新连接钱包前，先清空旧错误。
   setWalletError(null);
   if (window.ethereum === undefined){
     setWalletError("MetaMask is not installed");
     return;
   }
 
-  //请求用户授权当前网站访问钱包账户
+  // 请求用户授权当前网站访问钱包账户。
 
   try {
     const accounts = await window.ethereum.request({
@@ -227,7 +228,7 @@ async function handleConnectWallet(){
 
   setWalletAddress(accounts[0]  as Address);
 
-  //读取当前 MetaMask 网络 chainId
+  // 读取当前 MetaMask 网络 chainId。
   await handleLoadChainId();
 
 } catch {
@@ -235,11 +236,11 @@ async function handleConnectWallet(){
   }
 }
 
-//去链上读取 owner(), 然后把结果放进 contractOwnerAddress, 管理员地址
+// 从链上读取 owner()，并保存到 contractOwnerAddress。
 async function handleLoadOwner () {
   setMembershipError(null);
 
-  //如果没有合约地址, 或者没有 publicClient, 就停止
+  // 如果没有合约地址或 publicClient，就停止读取。
   if (membershipLockAddress === null || publicClient === null) {
     setMembershipError("Unsupported network");
     return;
@@ -254,7 +255,7 @@ async function handleLoadOwner () {
       functionName: "owner",
     }))as Address;
 
-    //刚才读到的 owner 地址放进 React state
+    // 把刚读到的 owner 地址保存进 React state。
     setContractOwnerAddress(owner);
   }catch(error){
     console.error("Failed to read contract owner:", error);
@@ -262,7 +263,7 @@ async function handleLoadOwner () {
   
 }
 
-//处理读取合约余额这件事
+// 读取合约余额。
 async function handleLoadContractBalance() {
   setMembershipError(null);
 
@@ -284,7 +285,7 @@ if (membershipLockAddress === null || publicClient === null) {
   }
 }
 
-//前端从链上 MembershipLock 合约读取会员价格 price, 并显示在页面上。
+// 从链上读取 MembershipLock 的会员价格 price，并显示在页面上。
 async function handleLoadPrice() {
   setMembershipError(null);
 
@@ -293,7 +294,7 @@ if (membershipLockAddress === null || publicClient === null) {
   return;
 }
 
-  //尝试执行读取链上数据的代码, 如果失败就进入 catch
+  // 尝试读取链上数据；如果失败就进入 catch。
   
   try{
     const client = publicClient as any;
@@ -306,7 +307,7 @@ if (membershipLockAddress === null || publicClient === null) {
     console.log("Raw price in wei:", price);
     console.log("Formatted price in ETH:", formatEther(price));
 
-    //把 price 从 wei 转成 ETH 字符串, 并保存到 React 状态
+    // 把 price 从 wei 转换成 ETH 字符串，并保存到 React state。
     setMembershipPrice(formatEther(price));
 
     setMembershipPriceRaw(price);
@@ -324,10 +325,10 @@ async function handleCheckMembership() {
   if(walletAddress === null){
     setAccessState("locked");
 
-    //用户点击 Check Membership 的流程里
+    // 如果用户还没连接钱包就检查会员，提示先连接钱包。
     setMembershipError("Please connect wallet first");
 
-  //立刻结束handleCheckMembership 函数
+    // 立刻结束 handleCheckMembership 函数。
     return;
   }
   
@@ -341,11 +342,11 @@ if (membershipLockAddress === null || publicClient === null) {
       const client = publicClient as any;
 
       const isMember = (await client.readContract({
-        //not walletAddress, is contract address: 去哪里查
+        // address 是合约地址：表示去哪个合约查询。
         address: membershipLockAddress,
         abi: MEMBERSHIP_LOCK_ABI,
         functionName: "hasValidMembership",
-        //walletAddress: 查谁
+        // args 里的 walletAddress 是被查询的用户。
         args: [walletAddress as Address],
       })) as boolean;
 
@@ -359,13 +360,13 @@ if (membershipLockAddress === null || publicClient === null) {
       })) as bigint;
 
       if(expiresAt === 0n){
-        setMembershipExpiresAtText("not set"); //显示: 没有设置
+        setMembershipExpiresAtText("not set"); // 没有设置会员到期时间。
         
       }else{
-        //把链上的秒级时间戳转换成JS可理解的日期对象,毫秒
+        // 把链上的秒级时间戳转换成 JavaScript Date 对象。
         const expiresAtDate = new Date(Number(expiresAt) * 1000);
 
-        //.toLocaleString 把日期对象转换成本地格式的字符串
+        // toLocaleString 把 Date 对象转换成本地格式文本。
         setMembershipExpiresAtText(expiresAtDate.toLocaleString());
       }
 
@@ -374,12 +375,12 @@ if (membershipLockAddress === null || publicClient === null) {
 
       setAccessState("locked");
     }finally {
-      //查询结束
+      // 查询结束，关闭 loading 状态。
       setIsCheckingMembership(false);
     }
 }
 
-  //读取ACL/RBAC/ABAC access result
+  // 读取当前钱包的 ACL/RBAC/ABAC 访问结果。
   async function handleLoadAccessDecision() {
   setMembershipError(null);
 
@@ -425,7 +426,7 @@ if (membershipLockAddress === null || publicClient === null) {
   }
 }
 
-//targetAddress 的访问结果
+// 读取 targetAddress 的访问结果。
 async function handleLoadTargetAccessDecision() {
   setMembershipError(null);
 
@@ -471,7 +472,7 @@ async function handleLoadTargetAccessDecision() {
   }
 }
 
-//把 targetAddress 加入 ACL 白名单
+// 把 targetAddress 加入 ACL 白名单。
 async function handleAddToAcl() {
   setMembershipError(null);
   setOwnerActionTxHash(null);
@@ -491,7 +492,7 @@ async function handleAddToAcl() {
     return;
   }
 
-  //trim() 会去掉前后空格
+  // trim() 会去掉地址前后的空格。
   if (targetAddress.trim() === "") {
     setMembershipError("Please enter target address");
     return;
@@ -534,7 +535,7 @@ async function handleAddToAcl() {
   }
 }
 
-//把 targetAddress 从 ACL 白名单移除
+// 把 targetAddress 从 ACL 白名单移除。
 async function handleRemoveFromAcl() {
   setMembershipError(null);
   setOwnerActionTxHash(null);
@@ -824,7 +825,7 @@ async function handleSetAbacAttributes() {
     return;
   }
 
-  //数字转换, 字符串转数字
+  // 把输入框里的字符串转换成数字。
   const kycLevel = Number(kycLevelInput);
   const riskScore = Number(riskScoreInput);
 
@@ -897,18 +898,18 @@ async function handleSetAbacAttributes() {
         return;
       }
       try{
-        //购买流程开始了, 现正等待用户在 MetaMask 里确认
+        // 购买流程开始，正在等待用户在 MetaMask 里确认。
         setPurchaseStatus("waitingWallet");
-        //清空上一次交易hash
+        // 清空上一次购买交易 hash。
         setPurchaseTxHash("");
 
-        //用来创建一个钱包客户端
+        // 创建钱包客户端，用来发送写合约交易。
         const walletClient = createWalletClient({
           chain: currentChain,
           transport: custom(window.ethereum),
         });
 
-        //writeContract: 发送一笔写合约交易
+        // writeContract 会发送一笔写合约交易。
         const hash = await walletClient.writeContract({
           address: membershipLockAddress,
           abi: MEMBERSHIP_LOCK_ABI,
@@ -923,7 +924,7 @@ async function handleSetAbacAttributes() {
         setPurchaseTxHash(hash);
         setPurchaseStatus("pending");
 
-        //waitForTransactionReceipt: 等待交易收据
+        // 等待交易收据，确认交易已经上链。
         await publicClient.waitForTransactionReceipt({hash: hash});
 
         setPurchaseStatus("confirmed");
@@ -963,12 +964,12 @@ async function handleSetAbacAttributes() {
 
     try{
       setWithdrawStatus("waitingWallet");
-      //清空上一次提现交易 hash
+      // 清空上一次提现交易 hash。
       setWithdrawTxHash("");
 
       const walletClient = createWalletClient({
         chain: currentChain,
-        //用浏览器钱包提供的 provider 发送请求
+        // 使用浏览器钱包 provider 发送交易。
         transport: custom(window.ethereum),
       });
 
@@ -981,17 +982,17 @@ async function handleSetAbacAttributes() {
         chain: currentChain,
       });
 
-      //把提现交易 hash 保存
+      // 保存提现交易 hash。
       setWithdrawTxHash(hash);
       
-      //交易已经发出，正在等待链上确认
+      // 交易已经发出，正在等待链上确认。
       setWithdrawStatus("pending");
 
       await publicClient.waitForTransactionReceipt({ hash});
 
       setWithdrawStatus("confirmed");
 
-      //提现成功后, 合约余额应该变化
+      // 提现成功后，重新读取合约余额。
       await handleLoadContractBalance();
 
     }catch(error){
@@ -1003,29 +1004,29 @@ async function handleSetAbacAttributes() {
     }
   }
 
-  //当前钱包是否为owner, .toLowerCase表示地址变小写
+  // 判断当前钱包是否为 owner；toLowerCase 用来忽略地址大小写差异。
   const isCurrentWalletOwner = walletAddress !== null &&
     contractOwnerAddress !== null &&
     walletAddress.toLowerCase() === contractOwnerAddress.toLowerCase();
 
 
-  //加入监听, 给 useEffect 一个函数, React 会在合适的时候执行
+  // 组件挂载后添加钱包事件监听。
   useEffect(() =>{
-    //如果没有 MetaMask, 就直接结束
+    // 如果没有 MetaMask，就直接结束。
     if (window.ethereum === undefined) {
       return;
     }
 
-    //如果当前钱包没有 on 这个监听方法, 也直接结束
+    // 如果钱包不支持 on() 监听方法，也直接结束。
     if(window.ethereum.on === undefined) {
       return;
     }
 
-    //处理账号切换
+    // 处理钱包账户切换。
     const handleAccountsChanged = (accounts: unknown) => {
       const nextAccounts = accounts as string[];
 
-      //如果数组长度是 0, 说明用户断开了网站和钱包的连接
+      // 如果没有账户，说明用户断开了网站和钱包的连接。
       if( nextAccounts.length === 0){
         setWalletAddress(null);
         setAccessState("locked");
@@ -1033,14 +1034,14 @@ async function handleSetAbacAttributes() {
         return;
       }
       
-      //如果账号数组不是空的, 就取第一个账号
+      // 如果账户存在，就使用第一个账户。
       setWalletAddress(nextAccounts[0] as Address);
     };
 
-    // 处理网络变化
+    // 处理网络切换。
     const handleChainChanged = (chainIdHex: unknown) => {
 
-      //把 MetaMask 给的十六进制 chainId 转成普通数字
+      // 把 MetaMask 给的十六进制 chainId 转成普通数字。
       const nextChainId = Number.parseInt(chainIdHex as string, 16);
 
       setCurrentChainId(nextChainId);
@@ -1059,23 +1060,23 @@ async function handleSetAbacAttributes() {
 
     };
 
-    //MetaMask 监听 accountsChanged 事件; 当账号变化时, 执行 handleAccountsChanged函数
+    // 监听 accountsChanged；账户变化时执行 handleAccountsChanged。
     window.ethereum.on("accountsChanged", handleAccountsChanged);
 
-    //当网络变化时, 执行 handleChainChanged
+    // 监听 chainChanged；网络变化时执行 handleChainChanged。
     window.ethereum.on("chainChanged", handleChainChanged);
 
-    //当这个组件卸载时, 执行这个函数做清理, 把 accountsChanged 事件上绑定的 handleAccountsChanged 函数移除掉
+    // 组件卸载时清理监听，避免重复绑定事件。
     return () => {
       window.ethereum?.removeListener?.("accountsChanged", handleAccountsChanged);
 
-      //页面卸载时，把 chainChanged 监听也取消掉
+      // 页面卸载时，也取消 chainChanged 监听。
       window.ethereum?.removeListener?.("chainChanged", handleChainChanged);
     };
   }, []);
 
-  //网络和合约地址准备好后, 自动读取 price / owner / balance
-  //membershipLockAddress 或 publicClient 变化时, 自动执行读取 price 的逻辑
+  // 网络和合约地址准备好后，自动读取 price / owner / balance。
+  // 当 membershipLockAddress 或 publicClient 变化时，自动读取 price。
   useEffect(() => {
     if (membershipLockAddress === null || publicClient === null){
       setMembershipPrice("");
@@ -1083,7 +1084,7 @@ async function handleSetAbacAttributes() {
       return;
     }
 
-    //void 只要执行 不需要拿回它返回结果
+    // void 表示只执行异步函数，不在这里等待返回值。
     void handleLoadPrice();
   }, [membershipLockAddress, publicClient]);
 
@@ -1108,7 +1109,7 @@ async function handleSetAbacAttributes() {
 }, [membershipLockAddress, publicClient]);
 
 
-//当钱包、合约地址、读链工具准备好或发生变化时, 自动检查当前钱包的会员状态
+// 当钱包、合约地址或读链工具变化时，自动检查当前钱包会员状态。
 useEffect(() => {
   if (walletAddress === null){
     setAccessState("locked");
@@ -1125,7 +1126,7 @@ useEffect(() => {
   void handleCheckMembership();
 }, [walletAddress, membershipLockAddress, publicClient]);
 
-//当钱包地址、合约地址或读链工具变化时，自动读取 ACL/RBAC/ABAC 访问结果
+// 当钱包、合约地址或读链工具变化时，自动读取 ACL/RBAC/ABAC 访问结果。
 useEffect(() => {
   if (walletAddress === null) {
     setAclAllowed(null);
@@ -1144,7 +1145,7 @@ useEffect(() => {
   void handleLoadAccessDecision();
 }, [walletAddress, membershipLockAddress, publicClient]);
 
-//访问控制结果显示格式化函数
+// 格式化访问控制结果的显示文本。
 function formatAccessResult(value: boolean | null) {
   if (value === null) {
     return "not loaded";
@@ -1154,254 +1155,454 @@ function formatAccessResult(value: boolean | null) {
 }
 
 
-//JSX
+// JSX 页面结构。
   return (
-    <main>
-      <h1>Unlock Mini DApp</h1>
+    <main className="app-shell">
+    <header className="app-header">
+      <div>
+        <h1>Unlock Mini DApp</h1>
+        <p className="app-subtitle">Membership access control demo</p>
+      </div>
 
-      {/*If left is null - not connected, else left*/}
-      <p>Wallet: {walletAddress ?? "not connected"}</p> 
-
-      <p>Network chainId: {currentChainId ?? "not loaded"}</p>
-
-      {/*只有 isUnsupportedNetwork 为 true 时, 才显示 Unsupported network*/}
-      {isUnsupportedNetwork && (
-        <p>Unsupported network</p>
-      )}
-
-      <p>Contract address: {membershipLockAddress ?? "not available"}</p>
-
-      {/* contractOwnerAddress 管理员地址 */}
-      <p>Contract owner: {contractOwnerAddress ?? "not loaded"}</p>
-
-      <p>
-        Current wallet is owner:{""}
-        {walletAddress === null || contractOwnerAddress === null
-        ? "not checked"
-        : isCurrentWalletOwner
-          ? "yes"
-          : "no"}
-      </p>
-
-    {isCurrentWalletOwner && (
-  <section>
-    <h2>Owner Management</h2>
-
-    <label>
-      Target address
-      <input
-        type="text"
-        value={targetAddress}
-        onChange={(event) => setTargetAddress(event.target.value)}
-        placeholder="0x..."
-      />
-    </label>
-
-    <p>Target ACL Access: {formatAccessResult(targetAclAllowed)}</p>
-    <p>Target RBAC Access: {formatAccessResult(targetRbacAllowed)}</p>
-    <p>Target ABAC Access: {formatAccessResult(targetAbacAllowed)}</p>
-
-    {/* Refresh targetAddress access decision manually. */}
-    <button
-      type="button"
-      onClick={handleLoadTargetAccessDecision}
-      disabled={isCheckingTargetAccessDecision}
-    >
-      {isCheckingTargetAccessDecision ? "Checking Target..." : "Refresh Target Access"}
-    </button>
-
-    <label>
-      KYC level
-      <input
-        type="number"
-        value={kycLevelInput}
-        onChange={(event) => setKycLevelInput(event.target.value)}
-      />
-    </label>
-
-    <label>
-      Risk score
-      <input
-        type="number"
-        value={riskScoreInput}
-        onChange={(event) => setRiskScoreInput(event.target.value)}
-      />
-    </label>
-
-    <label>
-      Banned
-      <input
-        type="checkbox"
-        checked={bannedInput}
-        onChange={(event) => setBannedInput(event.target.checked)}
-      />
-    </label>
-
-  <div>
-  <button type="button" onClick={handleAddToAcl}>
-    Add to ACL
-  </button>
-
-  <button type="button" onClick={handleRemoveFromAcl}>
-    Remove from ACL
-  </button>
-
-  <button type="button" onClick={handleGrantOperatorRole}>
-    Grant OPERATOR_ROLE
-  </button>
-
-  <button type="button" onClick={handleRevokeOperatorRole}>
-    Revoke OPERATOR_ROLE
-  </button>
-
-    <button type="button" onClick={handleGrantMembership}>
-      Grant Membership
-    </button>
-
-  <button type="button" onClick={handleSetAbacAttributes}>
-    Set ABAC
-  </button>
-  </div>
-
-    <p>Owner action status: {ownerActionStatus}</p>
-    <p>Owner action tx: {ownerActionTxHash ?? "none"}</p>
-  </section>
-
-)}
-
-      <p>
-        Contract balance:{""}
-        {contractBalance === "" ? "not loaded" : `${contractBalance} ETH`}
-      </p>
-
-    {/*react 中 && 可以条件显示 true就显示右边, false不显示*/}
-    {/* 如果 walletError 不是 null, 就显示错误信息 */}
-      
-      {walletError !== null && <p>{walletError}</p>}
-      {membershipError !== null && <p>{membershipError}</p>}
-
-      <p>Current status: {accessState}</p>
-
-      <p>ACL Access: {formatAccessResult(aclAllowed)}</p>
-      <p>RBAC Access: {formatAccessResult(rbacAllowed)}</p>
-      <p>ABAC Access: {formatAccessResult(abacAllowed)}</p>
-
-      {/* 手动重新读取访问控制结果 */}
-      <button
-        type="button"
-        onClick={handleLoadAccessDecision}
-        disabled={isCheckingAccessDecision}
-      >
-        {isCheckingAccessDecision ? "Checking Access..." : "Refresh Access"}
-      </button>
-      
-      {/*`${membershipPrice} ETH`= JavaScript模板字符串*/}
-      <p>Membership price: {membershipPrice === "" ? "not loaded" : `${membershipPrice} ETH`}</p>
-
-      {/* 显示当前钱包的会员到期时间 */}
-      <p>Membership expires at:{" "}
-        {membershipExpiresAtText === "" ? "not loaded" : membershipExpiresAtText}
-      </p>
-
-      <p>Purchase status: {purchaseStatus}</p>
-
-      <p>Withdraw status: {withdrawStatus}</p>
-      
-      {/*只有提现交易 hash 存在时, 才显示*/}
-      {withdrawTxHash !== "" && (
-        <p>Withdraw transaction hash: {withdrawTxHash}
-        {etherscanBaseUrl !== null && (
-      <>
-        {" "}
-        <a
-          href={`${etherscanBaseUrl}/tx/${withdrawTxHash}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          View on Etherscan
-        </a>
-      </>
-      )}
-        </p>
-      )}
-
-      {/*如果当前钱包是 owner, 才显示里面的按钮*/}
-      {isCurrentWalletOwner && (
-        <button
-          type='button'
-          onClick={handleWithdraw}
-          disabled={withdrawStatus === "waitingWallet" || withdrawStatus === "pending" }>
-
-        {withdrawStatus === "waitingWallet" || withdrawStatus === "pending"
-            ? "Withdrawing..."
-            : "Withdraw"}
-          </button>
-      )}  
-
-
-      
-      {/*如果 purchaseTxHash 不是空字符串, 才显示后面, 点击后进入 Sepolia Etherscan*/}
-      {purchaseTxHash !== "" &&(
-        <p>Transaction hash: {purchaseTxHash}
-        {etherscanBaseUrl !== null &&(
-          <>
-          {" "}
-          <a
-            href={`${etherscanBaseUrl}/tx/${purchaseTxHash}`}
-            target='_blank'
-            rel="noreferrer"
-            >
-              View on Etherscan
-            </a>
-          </>
-        )}
-          </p>
-      )}
-
-      {/* 按钮传函数名，不直接调用 */}
-      <button type='button' onClick={handleLoadOwner}>
-        Load Owner
-      </button>
-
-      <button type='button' onClick={handleLoadContractBalance}>
-        Load Contract Balance  
-      </button>
-
-      <button type="button" onClick = {handleLoadPrice}>
-        Load Price
-      </button>
-
-      {/*if isCheckMembership is true, 按钮禁用*/}
-      <button type="button" onClick={handleCheckMembership}
-      disabled={isCheckMembership}
-      >
-        {isCheckMembership ? "Check..." : "Check Membership"}
-      </button>
-      {/*if (isCheckMembership) {
-           按钮文字 = "Checking..."
-      } else {
-           按钮文字 = "Check Membership"}*/}
-
-        <button type="button" onClick={handleConnectWallet}>
+      <button type="button" onClick={handleConnectWallet}>
         Connect Wallet
       </button>
+    </header>
 
-      {/*disabled: 按钮是否禁用, return is true or false*/ }
-      <button type='button' 
-      onClick={handlePurchaseMembership}
-      disabled = {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"}>
-        {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"
-        ? "Purchasing..."
-        : "Purchase Membership"}
-        
-      </button>
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Connection Status</h2>
+      </div>
+
+      <div className="status-grid">
+        <div className="status-item">
+          <span className="status-label">Wallet</span>
+          <span className="status-value address">
+            {walletAddress ?? "not connected"}
+          </span>
+        </div>
+
+        <div className="status-item">
+          <span className="status-label">Network chainId</span>
+          <span className="status-value">
+            {currentChainId ?? "not loaded"}
+          </span>
+        </div>
+
+        <div className="status-item">
+          <span className="status-label">Contract address</span>
+          <span className="status-value address">
+            {membershipLockAddress ?? "not available"}
+          </span>
+        </div>
+
+        <div className="status-item">
+          <span className="status-label">Contract owner</span>
+          <span className="status-value address">
+            {contractOwnerAddress ?? "not loaded"}
+          </span>
+        </div>
+
+        <div className="status-item">
+          <span className="status-label">Current wallet is owner</span>
+          <span className="status-value">
+            {walletAddress === null || contractOwnerAddress === null
+              ? "not checked"
+              : isCurrentWalletOwner
+                ? "yes"
+                : "no"}
+          </span>
+        </div>
+      </div>
+
+  {/* 条件渲染：只有 isUnsupportedNetwork 为 true 时，才显示这个错误提示。 */}
+  {isUnsupportedNetwork && (
+    <p className="error-message">Unsupported network</p>
+  )}
+</section>
+
+      {isCurrentWalletOwner && (
+        <>
+          <section className="panel target-panel">
+            <div className="panel-header">
+              <h2>Target Access Control</h2>
+            </div>
+
+            <label className="form-field">
+              <span>Target address</span>
+              <input
+                type="text"
+                value={targetAddress}
+                onChange={(event) => setTargetAddress(event.target.value)}
+                placeholder="0x..."
+              />
+            </label>
+
+            <div className="access-grid">
+              <div className="access-card">
+                <span className="access-label">Target ACL Access</span>
+                <strong
+                  className={
+                    targetAclAllowed === null
+                      ? "access-value access-muted"
+                      : targetAclAllowed
+                        ? "access-value access-allowed"
+                        : "access-value access-denied"
+                  }
+                >
+                  {formatAccessResult(targetAclAllowed)}
+                </strong>
+              </div>
+
+              <div className="access-card">
+                <span className="access-label">Target RBAC Access</span>
+                <strong
+                  className={
+                    targetRbacAllowed === null
+                      ? "access-value access-muted"
+                      : targetRbacAllowed
+                        ? "access-value access-allowed"
+                        : "access-value access-denied"
+                  }
+                >
+                  {formatAccessResult(targetRbacAllowed)}
+                </strong>
+              </div>
+
+              <div className="access-card">
+                <span className="access-label">Target ABAC Access</span>
+                <strong
+                  className={
+                    targetAbacAllowed === null
+                      ? "access-value access-muted"
+                      : targetAbacAllowed
+                        ? "access-value access-allowed"
+                        : "access-value access-denied"
+                  }
+                >
+                  {formatAccessResult(targetAbacAllowed)}
+                </strong>
+              </div>
+            </div>
+
+            {/* 手动刷新 targetAddress 的访问结果。 */}
+            <div className="button-row">
+              <button
+                type="button"
+                onClick={handleLoadTargetAccessDecision}
+                disabled={isCheckingTargetAccessDecision}
+              >
+                {isCheckingTargetAccessDecision ? "Checking Target..." : "Refresh Target Access"}
+              </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Owner Actions</h2>
+            </div>
+
+            <div className="owner-action-grid">
+              <div className="action-group">
+                <h3>ACL Actions</h3>
+                <div className="button-row">
+                  <button type="button" onClick={handleAddToAcl}>
+                    Add to ACL
+                  </button>
+
+                  <button type="button" onClick={handleRemoveFromAcl}>
+                    Remove from ACL
+                  </button>
+                </div>
+              </div>
+
+              <div className="action-group">
+                <h3>RBAC Actions</h3>
+                <div className="button-row">
+                  <button type="button" onClick={handleGrantOperatorRole}>
+                    Grant OPERATOR_ROLE
+                  </button>
+
+                  <button type="button" onClick={handleRevokeOperatorRole}>
+                    Revoke OPERATOR_ROLE
+                  </button>
+                </div>
+              </div>
+
+              <div className="action-group">
+                <h3>Membership</h3>
+                <div className="button-row">
+                  <button type="button" onClick={handleGrantMembership}>
+                    Grant Membership
+                  </button>
+                </div>
+              </div>
+
+              <div className="action-group">
+                <h3>ABAC Attributes</h3>
+                <div className="form-grid">
+                  <label className="form-field compact-field">
+                    <span>KYC level</span>
+                    <input
+                      type="number"
+                      value={kycLevelInput}
+                      onChange={(event) => setKycLevelInput(event.target.value)}
+                    />
+                  </label>
+
+                  <label className="form-field compact-field">
+                    <span>Risk score</span>
+                    <input
+                      type="number"
+                      value={riskScoreInput}
+                      onChange={(event) => setRiskScoreInput(event.target.value)}
+                    />
+                  </label>
+
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={bannedInput}
+                      onChange={(event) => setBannedInput(event.target.checked)}
+                    />
+                    <span>Banned</span>
+                  </label>
+                </div>
+
+                <div className="button-row">
+                  <button type="button" onClick={handleSetAbacAttributes}>
+                    Set ABAC
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="status-strip">
+              <span>Owner action status: {ownerActionStatus}</span>
+              <span className="address">Owner action tx: {ownerActionTxHash ?? "none"}</span>
+            </div>
+          </section>
+        </>
+      )}
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2>Current Wallet Access</h2>
+        </div>
+
+        <p>Current status: {accessState}</p>
+
+        <div className="access-grid">
+          <div className="access-card">
+            <span className="access-label">ACL Access</span>
+            <strong
+              className={
+                aclAllowed === null
+                  ? "access-value access-muted"
+                  : aclAllowed
+                    ? "access-value access-allowed"
+                    : "access-value access-denied"
+              }
+            >
+              {formatAccessResult(aclAllowed)}
+            </strong>
+          </div>
+
+          <div className="access-card">
+            <span className="access-label">RBAC Access</span>
+            <strong
+              className={
+                rbacAllowed === null
+                  ? "access-value access-muted"
+                  : rbacAllowed
+                    ? "access-value access-allowed"
+                    : "access-value access-denied"
+              }
+            >
+              {formatAccessResult(rbacAllowed)}
+            </strong>
+          </div>
+
+          <div className="access-card">
+            <span className="access-label">ABAC Access</span>
+            <strong
+              className={
+                abacAllowed === null
+                  ? "access-value access-muted"
+                  : abacAllowed
+                    ? "access-value access-allowed"
+                    : "access-value access-denied"
+              }
+            >
+              {formatAccessResult(abacAllowed)}
+            </strong>
+          </div>
+        </div>
+
+      {/* 手动重新读取当前钱包的访问控制结果。 */}
+        <div className="button-row">
+          <button
+            type="button"
+            onClick={handleLoadAccessDecision}
+            disabled={isCheckingAccessDecision}
+          >
+            {isCheckingAccessDecision ? "Checking Access..." : "Refresh Access"}
+          </button>
+        </div>
+      </section>
+      
+      {/* 使用模板字符串把会员价格拼成 ETH 显示文本。 */}
+      <section className="panel">
+        <div className="panel-header">
+          <h2>Membership</h2>
+        </div>
+
+        <div className="status-grid">
+          <div className="status-item">
+            <span className="status-label">Membership price</span>
+            <span className="status-value">
+              {membershipPrice === "" ? "not loaded" : `${membershipPrice} ETH`}
+            </span>
+          </div>
+
+      {/* 显示当前钱包的会员到期时间。 */}
+          <div className="status-item">
+            <span className="status-label">Membership expires at</span>
+            <span className="status-value">
+              {membershipExpiresAtText === "" ? "not loaded" : membershipExpiresAtText}
+            </span>
+          </div>
+
+          <div className="status-item">
+            <span className="status-label">Purchase status</span>
+            <span className="status-value">{purchaseStatus}</span>
+          </div>
+        </div>
+
+        {/* 只有 purchaseTxHash 不为空时，才显示购买交易 hash；Sepolia 上可跳转 Etherscan。 */}
+        {purchaseTxHash !== "" &&(
+          <p className="hash-line">Transaction hash: <span className="address">{purchaseTxHash}</span>
+          {etherscanBaseUrl !== null &&(
+            <>
+            {" "}
+            <a
+              href={`${etherscanBaseUrl}/tx/${purchaseTxHash}`}
+              target='_blank'
+              rel="noreferrer"
+              >
+                View on Etherscan
+              </a>
+            </>
+          )}
+            </p>
+        )}
+
+        <div className="button-row">
+          {/* 如果 isCheckMembership 为 true，就禁用检查会员按钮。 */}
+          <button type="button" onClick={handleCheckMembership}
+          disabled={isCheckMembership}
+          >
+            {isCheckMembership ? "Check..." : "Check Membership"}
+          </button>
+          {/* 根据 isCheckMembership 决定按钮文字：检查中显示 Check...，否则显示 Check Membership。 */}
+
+          {/* disabled 控制按钮是否禁用，表达式结果是 true 或 false。 */}
+          <button type='button'
+          onClick={handlePurchaseMembership}
+          disabled = {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"}>
+            {purchaseStatus === "waitingWallet" || purchaseStatus === "pending"
+            ? "Purchasing..."
+            : "Purchase Membership"}
+
+          </button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2>Contract Admin</h2>
+        </div>
+
+        <div className="status-grid">
+          <div className="status-item">
+            <span className="status-label">Contract balance</span>
+            <span className="status-value">
+              {contractBalance === "" ? "not loaded" : `${contractBalance} ETH`}
+            </span>
+          </div>
+
+          <div className="status-item">
+            <span className="status-label">Withdraw status</span>
+            <span className="status-value">{withdrawStatus}</span>
+          </div>
+        </div>
+
+        {/* 只有 withdrawTxHash 存在时，才显示提现交易 hash。 */}
+        {withdrawTxHash !== "" && (
+          <p className="hash-line">Withdraw transaction hash: <span className="address">{withdrawTxHash}</span>
+          {etherscanBaseUrl !== null && (
+        <>
+          {" "}
+          <a
+            href={`${etherscanBaseUrl}/tx/${withdrawTxHash}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View on Etherscan
+          </a>
+        </>
+        )}
+          </p>
+        )}
+
+        <div className="button-row">
+          {/* 只有当前钱包是 owner 时，才显示 Withdraw 按钮。 */}
+          {isCurrentWalletOwner && (
+            <button
+              type='button'
+              onClick={handleWithdraw}
+              disabled={withdrawStatus === "waitingWallet" || withdrawStatus === "pending" }>
+
+            {withdrawStatus === "waitingWallet" || withdrawStatus === "pending"
+                ? "Withdrawing..."
+                : "Withdraw"}
+              </button>
+          )}
+
+          {/* 按钮传函数名，不要在这里直接调用函数。 */}
+          <button type='button' onClick={handleLoadOwner}>
+            Load Owner
+          </button>
+
+          <button type='button' onClick={handleLoadContractBalance}>
+            Load Contract Balance
+          </button>
+
+          <button type="button" onClick = {handleLoadPrice}>
+            Load Price
+          </button>
+        </div>
+      </section>
+
+      {/* React 里 && 可以做条件显示：左边为 true 时才显示右边。 */}
+      {/* 如果 walletError 或 membershipError 不为 null，就显示错误消息。 */}
+      {(walletError !== null || membershipError !== null) && (
+        <section className="panel message-panel">
+          <div className="panel-header">
+            <h2>Messages</h2>
+          </div>
+
+          {walletError !== null && <p className="error-message">{walletError}</p>}
+          {membershipError !== null && <p className="error-message">{membershipError}</p>}
+        </section>
+      )}
     </main>
   )
 }
 
 export default App
 
-/*<button type="button" onClick = {() => setAccessState("unlocked")}>
+/* 早期测试按钮示例：点击后手动把 accessState 改成 unlocked。
         Check Membership
       </button> */
   
