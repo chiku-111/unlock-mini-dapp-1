@@ -193,7 +193,7 @@ Learning/template files are kept under `docs/learning/`. They are not part of th
 Current Sepolia contract address:
 
 ```txt
-0xE55b07A3D404509b7DEa9FC195E40f4F2FeAB370
+0x1e65386ec16F2Af829497a45E72F6a4136c673D6
 ```
 
 Deployment files:
@@ -276,7 +276,24 @@ Target ABAC Access: Allowed
 
 ## Sepolia Deployment
 
-Use Hardhat Keystore to store Sepolia configuration:
+The latest Sepolia deployment is:
+
+```txt
+Network: sepolia
+ChainId: 11155111
+MembershipLock: 0x1e65386ec16F2Af829497a45E72F6a4136c673D6
+```
+
+You can provide Sepolia configuration with temporary PowerShell environment variables:
+
+```powershell
+$env:SEPOLIA_RPC_URL="https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY"
+$env:SEPOLIA_PRIVATE_KEY="YOUR_TEST_WALLET_PRIVATE_KEY"
+$env:DEPLOY_NETWORK="sepolia"
+npx.cmd hardhat run scripts/deploy-membership-lock.ts
+```
+
+Or use Hardhat Keystore to store Sepolia configuration:
 
 ```powershell
 npx.cmd hardhat keystore set SEPOLIA_RPC_URL
@@ -294,6 +311,33 @@ Deploy to Sepolia:
 ```powershell
 $env:DEPLOY_NETWORK="sepolia"
 npx.cmd hardhat run scripts/deploy-membership-lock.ts
+```
+
+After deployment, confirm that `frontend/src/deployments/11155111.json` contains the new Sepolia contract address.
+
+## Sepolia Frontend Demo
+
+MetaMask setup:
+
+```txt
+Network: Sepolia
+Owner wallet: the wallet that deployed the Sepolia contract
+Target address: another MetaMask account used as the target user
+```
+
+Demo steps:
+
+```txt
+1. Start the frontend and connect the owner wallet
+2. Enter the target user address
+3. Click Refresh Target Access
+4. Click Add to ACL and confirm the transaction
+5. Click Grant OPERATOR_ROLE and confirm the transaction
+6. Click Grant Membership and confirm the transaction
+7. Set ABAC with KYC level 2, risk score 30, banned unchecked
+8. Click Set ABAC and confirm the transaction
+9. Click Refresh Target Access
+10. Confirm Target ACL/RBAC/ABAC Access all show Allowed
 ```
 
 Configure the frontend Sepolia RPC URL in `frontend/.env.local`:
